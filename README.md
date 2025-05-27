@@ -30,9 +30,9 @@ The system is trained on user interaction data from an Online Food Delivery Serv
 - `product_id`: Unique identifier for food products
 - `request_id`: Identifier for recommendation requests (recommendations are grouped by request)
 - `action_type`: Type of user interaction (view, click, add to cart, purchase)
+- `product_name`: Tokenized product name
 
-**Note:** The actual dataset will be made available after the anonymous review process is completed to maintain the confidentiality of the company.
-
+First, download the data from https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw, then place it in the `/data` directory and make sure the file is named `dataset.parquet`.
 
 ## Installation
 
