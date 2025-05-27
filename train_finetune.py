@@ -38,24 +38,49 @@ class FinetuneDataset(Dataset):
     
     def __getitem__(self, idx):
         row = self.df.row(idx)
-        product_id, action_type, candidates, candidates_mask = row[0], row[2], row[3], row[4]
+        product_id, product_names, action_type, candidates, candidates_mask, candidate_names = row[0], row[1], row[3], row[4], row[5], row[6]
         
         return {
             "product_id": torch.tensor(product_id, dtype=torch.long),
+            "product_names": {
+                "ids": torch.tensor(product_names["ids"], dtype=torch.long),
+                "lengths": torch.tensor(product_names["lengths"], dtype=torch.long),
+            },
             "action_type": torch.tensor(action_type, dtype=torch.long),
-            "candidates": torch.tensor(candidates, dtype=torch.long),
-            "candidates_mask": torch.tensor(candidates_mask, dtype=torch.long)
+            "candidate": torch.tensor(candidates, dtype=torch.long),
+            "candidate_mask": torch.tensor(candidates_mask, dtype=torch.long),
+            "candidate_names": {
+                "ids": torch.tensor(candidate_names["ids"], dtype=torch.long),
+                "lengths": torch.tensor(candidate_names["lengths"], dtype=torch.long),
+            }
         }
 
 
 def collate_fn(batch):
     return {
         "product_id": pad_sequence([item["product_id"] for item in batch], batch_first=True, padding_value=0).to(torch.long),
+        "product_names": {
+            "ids": torch.cat([item["product_names"]["ids"] for item in batch]), 
+            "lengths": torch.cat([item["product_names"]["lengths"] for item in batch]), 
+        },
         "action_type": pad_sequence([item["action_type"] for item in batch], batch_first=True, padding_value=0).to(torch.long),
-        "candidates": torch.cat([item["candidates"] for item in batch]),
-        "candidates_mask": torch.cat([item["candidates_mask"] for item in batch]),
-        "candidates_lengths": torch.tensor([len(item["candidates"]) for item in batch], dtype=torch.long)
+        "candidate": torch.cat([item["candidate"] for item in batch]),
+        "candidate_mask": torch.cat([item["candidate_mask"] for item in batch]),
+        "candidate_lengths": torch.tensor([len(item["candidate"]) for item in batch], dtype=torch.long),
+        "candidate_names": {
+            "ids": torch.cat([item["candidate_names"]["ids"] for item in batch]), 
+            "lengths": torch.cat([item["candidate_names"]["lengths"] for item in batch]), 
+        },
     }
+
+
+def move_to_device(batch, device):
+    if isinstance(batch, torch.Tensor):
+        return batch.to(device)
+    elif isinstance(batch, dict):
+        return {k: move_to_device(v, device) for k, v in batch.items()}
+    else:
+        return batch
 
 
 def evalutate_model(backbone, test_dataset, device):
@@ -74,19 +99,18 @@ def evalutate_model(backbone, test_dataset, device):
     
     with torch.no_grad():
         for batch in tqdm(eval_loader):
-            for key in batch:
-                batch[key] = batch[key].to(device)
-            backbone_output = backbone(batch['product_id'], batch['action_type'], batch['candidates']) 
+            batch = move_to_device(batch, device)
+            backbone_output = backbone(batch) 
             user_embeddings = backbone_output['user_embeddings']
             candidates_embeddings = backbone_output['candidates_embeddings']
-            candidates_lengths = batch['candidates_lengths']
+            candidates_lengths = batch['candidate_lengths']
 
             scores = torch.einsum(
                 'te,te->t',
                 torch.repeat_interleave(user_embeddings, candidates_lengths, dim=0),
                 candidates_embeddings
             )
-            true_relevance = batch['candidates_mask'].cpu().numpy().astype(int)
+            true_relevance = batch['candidate_mask'].cpu().numpy().astype(int)
             predicted_relevance = scores.cpu().numpy()
             test_epoch_ndcg += ndcg_score(true_relevance[None,], predicted_relevance[None,], k=10, ignore_ties=True)
 
@@ -158,8 +182,7 @@ def train_finetune_model(mode,
         train_batches = 0
         
         for batch in tqdm(train_loader):
-            for key in batch:
-                batch[key] = batch[key].to(device)
+            batch = move_to_device(batch, device)
             optimizer.zero_grad()
             loss = model(batch)
             loss.backward()
@@ -177,8 +200,7 @@ def train_finetune_model(mode,
         
         with torch.no_grad():
             for batch in tqdm(test_loader):
-                for key in batch:
-                    batch[key] = batch[key].to(device)
+                batch = move_to_device(batch, device)
                 loss = model(batch)
                 
                 test_epoch_loss += loss.item()

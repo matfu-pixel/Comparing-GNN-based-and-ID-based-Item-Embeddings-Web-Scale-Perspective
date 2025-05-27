@@ -7,6 +7,7 @@ import os
 import argparse
 from abc import ABC, abstractmethod
 import logging
+from itertools import chain
 
 
 logging.basicConfig(
@@ -173,10 +174,18 @@ class PretrainReducer(Reducer):
                     
                     for key in ['product_id', 'timestamp', 'action_type']:
                         res_row[key] = [sample[key] for sample in list_of_dicts]
+                    res_row['product_names'] = {
+                        'ids': list(chain.from_iterable([sample['product_name'] for sample in list_of_dicts])),
+                        'lengths': [len(sample['product_name']) for sample in list_of_dicts]
+                    }
                     
                     # Determine train/test split
                     res_row['is_valid'] = [row['timestamp'] > self._timesplit]
                     res_row['candidate'] = [row['product_id']]
+                    res_row['candidate_names'] = {
+                        'ids': row['product_name'],
+                        'lengths': [len(row['product_name'])]
+                    }
                     res_rows.append(res_row)
                 
                 history.push(row)
@@ -222,11 +231,19 @@ class FinetuneReducer(Reducer):
                     
                     for key in ['product_id', 'timestamp', 'action_type']:
                         res_row[key] = [sample[key] for sample in list_of_dicts]
+                    res_row['product_names'] = {
+                        'ids': list(chain.from_iterable([sample['product_name'] for sample in list_of_dicts])),
+                        'lengths': [len(sample['product_name']) for sample in list_of_dicts]
+                    }
                     
                     # Determine train/test split
                     res_row['is_valid'] = [row['timestamp'] > self._timesplit]
                     res_row['candidates'] = row['candidates']
                     res_row['candidates_mask'] = row['candidates_mask']
+                    res_row['candidate_names'] = {
+                        'ids': list(chain.from_iterable(row['product_name_list'])),
+                        'lengths': [len(sample) for sample in row['product_name_list']]
+                    }
                     res_rows.append(res_row)
             elif row['action_type'] in {ActionType.VIEW, ActionType.CLICK, ActionType.CART_UPDATE, ActionType.PURCHASE}:
                 history.push(row)
@@ -334,13 +351,21 @@ class Preprocessor:
         """
         RESULT_SCHEMA = {
             'product_id': pl.List(pl.UInt64),
+            'product_names': pl.Struct({
+                'ids': pl.List(pl.Int64),
+                'lengths': pl.List(pl.Int64)
+            }),
             'timestamp': pl.List(pl.Int64),
             'action_type': pl.List(pl.Utf8),
             'is_valid': pl.List(pl.Boolean),
-            'candidate': pl.List(pl.UInt64)
+            'candidate': pl.List(pl.UInt64),
+            'candidate_names': pl.Struct({
+                'ids': pl.List(pl.Int64),
+                'lengths': pl.List(pl.Int64)
+            })
         }
         prepared_data = self._data.select(
-            pl.col('user_id', 'product_id', 'timestamp', 'action_type')
+            pl.col('user_id', 'product_id', 'timestamp', 'action_type', 'product_name')
         ).sort(['user_id', 'timestamp'])
         
         reducer = PretrainReducer(
@@ -375,7 +400,7 @@ class Preprocessor:
             LazyFrame with prepared target data
         """
         return self._data.select(
-            pl.col('user_id', 'product_id', 'timestamp', 'action_type', 'request_id')
+            pl.col('user_id', 'product_id', 'timestamp', 'action_type', 'request_id', 'product_name')
         ).filter(
             pl.col('action_type').is_in([ActionType.VIEW, ActionType.CART_UPDATE])
         ).with_columns(
@@ -386,6 +411,7 @@ class Preprocessor:
             pl.col('user_id').min(),
             pl.col('timestamp').min(),
             pl.col('target').max(),
+            pl.col('product_name').first()
         ]).group_by('request_id').agg(
             pl.col('user_id').min(),
             pl.col('timestamp').min(),
@@ -393,6 +419,7 @@ class Preprocessor:
             pl.col('target').sum().alias('postive_candidates_count'),
             pl.col('target').count().alias('candidates_count'),
             pl.col('product_id').alias('candidates'),
+            pl.col('product_name').alias('product_name_list')
         ).with_columns(
             pl.lit(ActionType.TARGET).alias('action_type')
         ).filter((pl.col('postive_candidates_count') > 0) & (pl.col('candidates_count') > 1)).drop(['postive_candidates_count', 'candidates_count'])
@@ -416,16 +443,24 @@ class Preprocessor:
         """
         RESULT_SCHEMA = {
             'product_id': pl.List(pl.UInt64),
+            'product_names': pl.Struct({
+                'ids': pl.List(pl.Int64),
+                'lengths': pl.List(pl.Int64)
+            }),
             'timestamp': pl.List(pl.Int64),
             'action_type': pl.List(pl.Utf8),
             'is_valid': pl.List(pl.Boolean),
             'candidates': pl.List(pl.UInt64),
             'candidates_mask': pl.List(pl.Boolean),
+            'candidate_names': pl.Struct({
+                'ids': pl.List(pl.Int64),
+                'lengths': pl.List(pl.Int64)
+            })
         }
         
         # Prepare regular interaction data
         prepared_data = self._data.select(
-            pl.col('user_id', 'product_id', 'timestamp', 'action_type')
+            pl.col('user_id', 'product_id', 'timestamp', 'action_type', 'product_name')
         )
 
         # Prepare target data
@@ -448,7 +483,7 @@ class Preprocessor:
         ).with_columns(
             pl.col("action_type").list.eval(pl.element().replace(self.mapping_action_types).cast(pl.Int8)).alias("action_type")
         )
-        
+
         # Split into train and test based on is_valid
         train_data = result.filter(pl.col('is_valid').list.all() == False).drop('is_valid').collect()
         test_data = result.filter(pl.col('is_valid').list.all() == True).drop('is_valid').collect()

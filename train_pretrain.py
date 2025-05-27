@@ -36,21 +36,46 @@ class PretrainDataset(Dataset):
     
     def __getitem__(self, idx):
         row = self.df.row(idx)
-        product_id, action_type, candidate = row[0], row[2], row[3]
+        product_id, product_names, action_type, candidate, candidate_names = row[0], row[1], row[3], row[4], row[5]
         
         return {
             "product_id": torch.tensor(product_id, dtype=torch.long),
+            "product_names": {
+                "ids": torch.tensor(product_names["ids"], dtype=torch.long),
+                "lengths": torch.tensor(product_names["lengths"], dtype=torch.long),
+            },
             "action_type": torch.tensor(action_type, dtype=torch.long),
-            "candidate": torch.tensor(candidate, dtype=torch.long)
+            "candidate": torch.tensor(candidate, dtype=torch.long),
+            "candidate_names": {
+                "ids": torch.tensor(candidate_names["ids"], dtype=torch.long),
+                "lengths": torch.tensor(candidate_names["lengths"], dtype=torch.long),
+            }
         }
 
 
 def collate_fn(batch):
     return {
         "product_id": pad_sequence([item["product_id"] for item in batch], batch_first=True, padding_value=0).to(torch.long),
+        "product_names": {
+            "ids": torch.cat([item["product_names"]["ids"] for item in batch]), 
+            "lengths": torch.cat([item["product_names"]["lengths"] for item in batch]), 
+        },
         "action_type": pad_sequence([item["action_type"] for item in batch], batch_first=True, padding_value=0).to(torch.long),
-        "candidate": torch.cat([item["candidate"] for item in batch])
+        "candidate": torch.cat([item["candidate"] for item in batch]), 
+        "candidate_names": {
+            "ids": torch.cat([item["candidate_names"]["ids"] for item in batch]), 
+            "lengths": torch.cat([item["candidate_names"]["lengths"] for item in batch]), 
+        },
     }
+
+
+def move_to_device(batch, device):
+    if isinstance(batch, torch.Tensor):
+        return batch.to(device)
+    elif isinstance(batch, dict):
+        return {k: move_to_device(v, device) for k, v in batch.items()}
+    else:
+        return batch
 
 
 def train_pretrain_model(mode,
@@ -121,8 +146,7 @@ def train_pretrain_model(mode,
         train_batches = 0
         
         for batch in tqdm(train_loader):
-            for key in batch:
-                batch[key] = batch[key].to(device)
+            batch = move_to_device(batch, device)
             optimizer.zero_grad()
             loss = model(batch)
             loss.backward()
@@ -141,8 +165,7 @@ def train_pretrain_model(mode,
         
         with torch.no_grad():
             for batch in tqdm(test_loader):
-                for key in batch:
-                    batch[key] = batch[key].to(device)
+                batch = move_to_device(batch, device)
                 loss = model(batch)
                 
                 test_epoch_loss += loss.item()
