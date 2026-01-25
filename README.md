@@ -21,9 +21,48 @@ train_twhin.py         # Advanced training approach
 ```
 
 
+## Installation
+
+Clone the repository:
+```bash
+git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective.git
+cd Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective
+```
+
+This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+To set up the project:
+
+```bash
+uv python install 3.12
+uv venv --python 3.12
+source .venv/bin/activate
+uv sync --dev
+```
+
+Note: Currently, this installs PyTorch for CUDA 12.8. If this does not work for you, or if you want another CUDA build, override it with `uv pip install torch <YOUR REQUIRED DISTRIBUTION>`.
+
+
+## Data
+
+### Download data 
+
+We use [DVC](https://dvc.org/) to track the data and model weights. The Google Drive is used as a remote storage. Follow [this instruction](https://doc.dvc.org/user-guide/data-management/remote-storage/google-drive#using-a-custom-google-cloud-project-recommended) to obtain the required credentials. You will end up with `.dvc/config.local` file containing:
+```
+['remote "storage"']
+    gdrive_client_id = <YOUR CLIENT ID>
+    gdrive_client_secret = <YOUR SECRET>
+```
+
+Alternatively, you can simply download the [raw data](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw) and put it into `data/dataset.parquet`.
+
+
 ## Data Description
 
-The system is trained on user interaction data from an Online Food Delivery Service with the following structure:
+The model is trained on user interaction data from an Online Food Delivery Service with the following structure:
 
 - `user_id`: Unique identifier for users
 - `timestamp`: Time when the interaction occurred
@@ -33,16 +72,6 @@ The system is trained on user interaction data from an Online Food Delivery Serv
 - `product_name`: Tokenized product name
 
 First, download the data from https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw, then place it in the `/data` directory and make sure the file is named `dataset.parquet`.
-
-## Installation
-
-To set up the project:
-
-```bash
-git clone [repository-url]
-cd [repository-name]
-pip install -r requirements.txt
-```
 
 
 ## Usage
