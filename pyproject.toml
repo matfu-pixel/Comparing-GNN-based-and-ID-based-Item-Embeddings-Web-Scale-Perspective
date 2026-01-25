@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "dvc>=3.66.1",
     "numpy>=2.4.1",
     "polars>=1.37.1",
     "scikit-learn>=1.8.0",
@@ -25,3 +26,16 @@ ignore = ["F403", "E721"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[tool.uv.sources]
+comparing-gnn-based-and-id-based-item-embeddings-web-scale-perspective = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "comparing-gnn-based-and-id-based-item-embeddings-web-scale-perspective",
+]
