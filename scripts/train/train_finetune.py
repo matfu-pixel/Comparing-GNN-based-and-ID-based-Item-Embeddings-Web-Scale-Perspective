@@ -14,7 +14,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-from utils.models import FinetuneModel
+from src.models import FinetuneModel
 
 
 warnings.filterwarnings("ignore")

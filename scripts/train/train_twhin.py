@@ -10,7 +10,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-from utils.models import TwhinModel
+from src.models import TwhinModel
 
 
 def set_deterministic(seed=42):
