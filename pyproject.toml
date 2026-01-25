@@ -1,0 +1,7 @@
+[project]
+name = "comparing-gnn-based-and-id-based-item-embeddings-web-scale-perspective"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
