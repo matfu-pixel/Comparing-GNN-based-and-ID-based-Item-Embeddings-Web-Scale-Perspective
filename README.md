@@ -25,8 +25,8 @@ train_twhin.py         # Advanced training approach
 
 Clone the repository:
 ```bash
-git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective.git
-cd Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective
+git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective.git gnn_utils
+cd gnn_utils
 ```
 
 This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward:
@@ -55,6 +55,11 @@ We use [DVC](https://dvc.org/) to track the data and model weights. The Google D
 ['remote "storage"']
     gdrive_client_id = <YOUR CLIENT ID>
     gdrive_client_secret = <YOUR SECRET>
+```
+Pull the data and model checkpoints:
+```bash
+dvc pull
+dvc repro
 ```
 
 Alternatively, you can simply download the [raw data](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw) and put it into `data/dataset.parquet`.
