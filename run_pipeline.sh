@@ -18,44 +18,44 @@ RUN_FINETUNE=false
 # Parse arguments
 # --------------------
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --prepare)
-      RUN_PREPARE=true
-      ;;
-    --train-twhin)
-      RUN_TWHIN=true
-      ;;
-    --train-pretrain)
-      RUN_PRETRAIN=true
-      ;;
-    --train-finetune)
-      RUN_FINETUNE=true
-      ;;
-    --train)
-      RUN_TWHIN=true
-      RUN_PRETRAIN=true
-      RUN_FINETUNE=true
-      ;;
-    --all)
-      RUN_PREPARE=true
-      RUN_TWHIN=true
-      RUN_PRETRAIN=true
-      RUN_FINETUNE=true
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
-  shift
+    case "$1" in
+        --prepare)
+            RUN_PREPARE=true
+            ;;
+        --train-twhin)
+            RUN_TWHIN=true
+            ;;
+        --train-pretrain)
+            RUN_PRETRAIN=true
+            ;;
+        --train-finetune)
+            RUN_FINETUNE=true
+            ;;
+        --train)
+            RUN_TWHIN=true
+            RUN_PRETRAIN=true
+            RUN_FINETUNE=true
+            ;;
+        --all)
+            RUN_PREPARE=true
+            RUN_TWHIN=true
+            RUN_PRETRAIN=true
+            RUN_FINETUNE=true
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+    shift
 done
 
 # If no args given → default to all
 if ! $RUN_PREPARE && ! $RUN_TWHIN && ! $RUN_PRETRAIN && ! $RUN_FINETUNE; then
-  RUN_PREPARE=true
-  RUN_TWHIN=true
-  RUN_PRETRAIN=true
-  RUN_FINETUNE=true
+    RUN_PREPARE=true
+    RUN_TWHIN=true
+    RUN_PRETRAIN=true
+    RUN_FINETUNE=true
 fi
 
 # --------------------
