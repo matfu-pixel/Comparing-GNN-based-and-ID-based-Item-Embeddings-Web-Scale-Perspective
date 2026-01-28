@@ -8,9 +8,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.dataset import TwhinDataset
-from src.models import TwhinModel
-from src.utils import set_deterministic
+from gnn_utils.dataset import TwhinDataset
+from gnn_utils.models import TwhinModel
+from gnn_utils.utils import set_deterministic
 
 
 def train_twhin_model(

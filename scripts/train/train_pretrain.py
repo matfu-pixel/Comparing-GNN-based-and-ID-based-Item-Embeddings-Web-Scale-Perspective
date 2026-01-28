@@ -9,10 +9,10 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.dataset import PretrainDataset
-from src.dataset import pretrain_collate_fn as collate_fn
-from src.models import ModelBackbone, PretrainModel
-from src.utils import move_to_device, set_deterministic
+from gnn_utils.dataset import PretrainDataset
+from gnn_utils.dataset import pretrain_collate_fn as collate_fn
+from gnn_utils.models import ModelBackbone, PretrainModel
+from gnn_utils.utils import move_to_device, set_deterministic
 
 
 warnings.filterwarnings("ignore")

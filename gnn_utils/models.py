@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.losses import CalibratedPairwiseLogistic, InBatchSampledSoftmax, TwhinLoss
+from gnn_utils.losses import CalibratedPairwiseLogistic, InBatchSampledSoftmax, TwhinLoss
 
 
 class TwhinModel(nn.Module):

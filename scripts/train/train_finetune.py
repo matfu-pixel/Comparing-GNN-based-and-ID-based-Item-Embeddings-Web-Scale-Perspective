@@ -11,10 +11,10 @@ from sklearn.metrics import ndcg_score
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.dataset import FinetuneDataset
-from src.dataset import finetune_collate_fn as collate_fn
-from src.models import FinetuneModel
-from src.utils import move_to_device, set_deterministic
+from gnn_utils.dataset import FinetuneDataset
+from gnn_utils.dataset import finetune_collate_fn as collate_fn
+from gnn_utils.models import FinetuneModel
+from gnn_utils.utils import move_to_device, set_deterministic
 
 
 warnings.filterwarnings("ignore")
