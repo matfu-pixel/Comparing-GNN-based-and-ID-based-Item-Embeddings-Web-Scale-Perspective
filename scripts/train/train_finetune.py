@@ -2,98 +2,22 @@ import argparse
 import json
 import logging
 import os
-import random
 import warnings
 
-import numpy as np
 import polars as pl
 import torch
 import torch.optim as optim
 from sklearn.metrics import ndcg_score
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.dataset import FinetuneDataset
+from src.dataset import finetune_collate_fn as collate_fn
 from src.models import FinetuneModel
+from src.utils import move_to_device, set_deterministic
 
 
 warnings.filterwarnings("ignore")
-
-
-def set_deterministic(seed=42):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-class FinetuneDataset(Dataset):
-    def __init__(self, df):
-        self.df = df
-
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, idx):
-        row = self.df.row(idx)
-        product_id, product_names, action_type, candidates, candidates_mask, candidate_names = (
-            row[0],
-            row[1],
-            row[3],
-            row[4],
-            row[5],
-            row[6],
-        )
-
-        return {
-            "product_id": torch.tensor(product_id, dtype=torch.long),
-            "product_names": {
-                "ids": torch.tensor(product_names["ids"], dtype=torch.long),
-                "lengths": torch.tensor(product_names["lengths"], dtype=torch.long),
-            },
-            "action_type": torch.tensor(action_type, dtype=torch.long),
-            "candidate": torch.tensor(candidates, dtype=torch.long),
-            "candidate_mask": torch.tensor(candidates_mask, dtype=torch.long),
-            "candidate_names": {
-                "ids": torch.tensor(candidate_names["ids"], dtype=torch.long),
-                "lengths": torch.tensor(candidate_names["lengths"], dtype=torch.long),
-            },
-        }
-
-
-def collate_fn(batch):
-    return {
-        "product_id": pad_sequence([item["product_id"] for item in batch], batch_first=True, padding_value=0).to(
-            torch.long
-        ),
-        "product_names": {
-            "ids": torch.cat([item["product_names"]["ids"] for item in batch]),
-            "lengths": torch.cat([item["product_names"]["lengths"] for item in batch]),
-        },
-        "action_type": pad_sequence([item["action_type"] for item in batch], batch_first=True, padding_value=0).to(
-            torch.long
-        ),
-        "candidate": torch.cat([item["candidate"] for item in batch]),
-        "candidate_mask": torch.cat([item["candidate_mask"] for item in batch]),
-        "candidate_lengths": torch.tensor([len(item["candidate"]) for item in batch], dtype=torch.long),
-        "candidate_names": {
-            "ids": torch.cat([item["candidate_names"]["ids"] for item in batch]),
-            "lengths": torch.cat([item["candidate_names"]["lengths"] for item in batch]),
-        },
-    }
-
-
-def move_to_device(batch, device):
-    if isinstance(batch, torch.Tensor):
-        return batch.to(device)
-    elif isinstance(batch, dict):
-        return {k: move_to_device(v, device) for k, v in batch.items()}
-    else:
-        return batch
 
 
 def evalutate_model(backbone, test_dataset, device):

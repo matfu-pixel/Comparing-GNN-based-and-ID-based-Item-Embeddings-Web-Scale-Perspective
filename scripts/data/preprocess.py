@@ -279,10 +279,10 @@ class Preprocessor:
 
     def preprocess_data(self) -> None:
         """
-        Preprocess the data by mapping product IDs to integers.
+        Preprocess the data by mapping product and user IDs to integers.
 
         This modifies the internal data representation by replacing
-        product IDs with sequential integer IDs.
+        product and user IDs with sequential integer IDs.
         """
         unique_product_ids = self._data.select(pl.col("product_id")).unique().collect().to_series().to_list()
         mapping_product_ids = {val: idx for idx, val in enumerate(sorted(unique_product_ids))}
@@ -315,8 +315,9 @@ class Preprocessor:
         )
 
         # Split into train and test based on is_valid
-        train_data = result.filter(not pl.col("is_valid")).drop("is_valid").collect()
-        test_data = result.filter(pl.col("is_valid")).drop("is_valid").collect()
+        train_data, test_data = pl.collect_all(
+            [result.filter(~pl.col("is_valid")).drop("is_valid"), result.filter(pl.col("is_valid")).drop("is_valid")]
+        )
 
         logger.info(f"Preprocessed twhin data: {len(train_data)} train rows, {len(test_data)} test rows")
         return train_data, test_data
@@ -361,15 +362,20 @@ class Preprocessor:
             prepared_data.group_by("user_id")
             .map_groups(reducer, schema=RESULT_SCHEMA)
             .with_columns(
-                pl.col("action_type")
-                .list.eval(pl.element().replace(self.mapping_action_types).cast(pl.Int8))
-                .alias("action_type")
+                pl.col("action_type").list.eval(
+                    pl.element().map_elements(
+                        lambda s: self.mapping_action_types[s],
+                        return_dtype=pl.Int8,
+                    )
+                )
             )
         )
 
         # Split into train and test based on is_valid
-        train_data = result.filter(not pl.col("is_valid").list.all()).drop("is_valid").collect()
-        test_data = result.filter(pl.col("is_valid").list.all()).drop("is_valid").collect()
+        train_lf = result.filter(~pl.col("is_valid").list.all()).drop("is_valid")
+        test_lf = result.filter(pl.col("is_valid").list.all()).drop("is_valid")
+
+        train_data, test_data = pl.collect_all([train_lf, test_lf])
 
         logger.info(f"Preprocessed pretrain data: {len(train_data)} train rows, {len(test_data)} test rows")
         return train_data, test_data
@@ -459,15 +465,20 @@ class Preprocessor:
             prepared_data.group_by("user_id")
             .map_groups(reducer, schema=RESULT_SCHEMA)
             .with_columns(
-                pl.col("action_type")
-                .list.eval(pl.element().replace(self.mapping_action_types).cast(pl.Int8))
-                .alias("action_type")
+                pl.col("action_type").list.eval(
+                    pl.element().map_elements(
+                        lambda s: self.mapping_action_types[s],
+                        return_dtype=pl.Int8,
+                    )
+                )
             )
         )
 
         # Split into train and test based on is_valid
-        train_data = result.filter(not pl.col("is_valid").list.all()).drop("is_valid").collect()
-        test_data = result.filter(pl.col("is_valid").list.all()).drop("is_valid").collect()
+        train_lf = result.filter(~pl.col("is_valid").list.all()).drop("is_valid")
+        test_lf = result.filter(pl.col("is_valid").list.all()).drop("is_valid")
+
+        train_data, test_data = pl.collect_all([train_lf, test_lf])
 
         logger.info(f"Preprocessed finetune data: {len(train_data)} train rows, {len(test_data)} test rows")
         return train_data, test_data

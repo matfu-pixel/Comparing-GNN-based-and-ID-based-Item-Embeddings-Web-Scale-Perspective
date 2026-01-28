@@ -1,45 +1,16 @@
 import argparse
 import logging
 import os
-import random
 
-import numpy as np
 import polars as pl
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.dataset import TwhinDataset
 from src.models import TwhinModel
-
-
-def set_deterministic(seed=42):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-class TwhinDataset(Dataset):
-    def __init__(self, df):
-        self.df = df
-
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, idx):
-        row = self.df.row(idx)
-        user_id, product_id, action_type = row[0], row[1], row[2]
-
-        return {
-            "users": torch.tensor(user_id, dtype=torch.long),
-            "items": torch.tensor(product_id, dtype=torch.long),
-            "relations": torch.tensor(action_type, dtype=torch.long),
-        }
+from src.utils import set_deterministic
 
 
 def train_twhin_model(
