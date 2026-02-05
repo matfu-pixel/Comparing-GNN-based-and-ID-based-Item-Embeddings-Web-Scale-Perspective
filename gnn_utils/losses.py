@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 
+from gnn_utils.metrics import inbatch_mrr, inbatch_recall_at_k
+from gnn_utils.utils import make_pairs
+
 
 class TwhinLoss(nn.Module):
     def __init__(self, reg_weight=0.0):
@@ -9,7 +12,7 @@ class TwhinLoss(nn.Module):
         self.scale = nn.Parameter(torch.zeros(1))
         self.bias = nn.Parameter(torch.zeros(1))
 
-    def forward(self, source_embeddings, target_embeddings):
+    def forward(self, source_embeddings, target_embeddings, calculate_mrr):
         batch_size = source_embeddings.size(0)
         num_negatives = batch_size * batch_size - batch_size
         num_positives = batch_size
@@ -33,10 +36,12 @@ class TwhinLoss(nn.Module):
         )
         reg = (source_embeddings**2).mean() + (target_embeddings**2).mean()
 
-        return (
-            loss,
-            self.reg_weight * reg,
-        )
+        if not calculate_mrr:
+            return (
+                loss,
+                self.reg_weight * reg,
+            )
+        return (loss, self.reg_weight * reg, inbatch_mrr(dot_products))
 
 
 class InBatchSampledSoftmax(nn.Module):
@@ -51,31 +56,11 @@ class InBatchSampledSoftmax(nn.Module):
     def temperature(self):
         return torch.clip(torch.exp(self.tau), min=self.MIN_TEMPERATURE, max=self.MAX_TEMPERATURE)
 
-    def forward(self, queries, candidates):
+    def forward(self, queries, candidates, recall_at=None):
         logits = self.temperature * queries @ candidates.T
-        return -torch.log_softmax(logits, dim=1).diag().mean()
-
-
-def make_groups(lengths: torch.Tensor) -> torch.Tensor:
-    if lengths.dim() != 1 or lengths.is_floating_point():
-        raise ValueError("Invalid lengths tensor")
-    if lengths.size(0) == 0:
-        return lengths.clone()
-    offset = lengths.cumsum(dim=0)
-    addition = torch.zeros(int(offset[-1]) + 1, dtype=offset.dtype, device=offset.device)
-    addition = addition.scatter_add_(dim=0, index=offset, src=torch.ones_like(offset))
-    return addition[:-1].cumsum(dim=0)
-
-
-def make_pairs(lengths: torch.Tensor) -> torch.Tensor:
-    repeat = lengths[make_groups(lengths)]
-    first = make_groups(repeat)
-    addition = torch.ones(first.size(0) + 1, dtype=first.dtype, device=first.device)
-    addition.scatter_add_(dim=0, index=lengths.square().cumsum(dim=0), src=lengths)
-    addition.scatter_add_(dim=0, index=repeat.cumsum(dim=0), src=-repeat)
-    addition[0].add_(-1)
-    second = addition[:-1].cumsum(dim=0)
-    return torch.stack([first, second])
+        if recall_at is None:
+            return -torch.log_softmax(logits, dim=1).diag().mean()
+        return -torch.log_softmax(logits, dim=1).diag().mean(), inbatch_recall_at_k(queries, candidates, recall_at)
 
 
 class CalibratedPairwiseLogistic(nn.Module):

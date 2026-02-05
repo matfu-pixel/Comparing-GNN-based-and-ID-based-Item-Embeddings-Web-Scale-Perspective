@@ -14,13 +14,14 @@ class TwhinModel(nn.Module):
         self.relation_embeddings = nn.Embedding(relation_cardinality, embedding_dim)
         self.criterion = TwhinLoss(reg_weight=reg_weight)
 
-    def forward(self, inputs):
+    def forward(self, inputs, calculate_mrr=False):
         item_embeddings = self.item_embeddings(inputs["items"])
         user_embeddings = self.user_embeddings(inputs["users"])
         relation_embeddings = self.relation_embeddings(inputs["relations"])
         return self.criterion(
             torch.nn.functional.normalize(user_embeddings + relation_embeddings),
             torch.nn.functional.normalize(item_embeddings),
+            calculate_mrr=calculate_mrr,
         )
 
 
@@ -133,11 +134,11 @@ class PretrainModel(nn.Module):
         self.backbone = backbone
         self.criterion = InBatchSampledSoftmax()
 
-    def forward(self, inputs):
+    def forward(self, inputs, recall_at=None):
         backbone_output = self.backbone(inputs)
         user_embeddings = backbone_output["user_embeddings"]
         candidates_embeddings = backbone_output["candidates_embeddings"]
-        return self.criterion(user_embeddings, candidates_embeddings.squeeze(1))
+        return self.criterion(user_embeddings, candidates_embeddings.squeeze(1), recall_at=recall_at)
 
 
 class FinetuneModel(nn.Module):

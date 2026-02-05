@@ -1,7 +1,11 @@
 import argparse
+import datetime
+import json
 import logging
 import os
 
+import mlflow
+import numpy as np
 import polars as pl
 import torch
 import torch.optim as optim
@@ -10,7 +14,7 @@ from tqdm import tqdm
 
 from gnn_utils.dataset import TwhinDataset
 from gnn_utils.models import TwhinModel
-from gnn_utils.utils import set_deterministic
+from gnn_utils.utils import move_to_device, set_deterministic
 
 
 def train_twhin_model(
@@ -25,8 +29,9 @@ def train_twhin_model(
     lr=0.001,
     reg_weight=0.01,
     device="cuda" if torch.cuda.is_available() else "cpu",
-    output_log_dir="./tmp/logs",
-    output_model_dir="./tmp/models",
+    output_log_dir="./logs",
+    output_model_dir="./models",
+    log_every_num_steps=10,
 ):
     logger = logging.getLogger(__name__)
 
@@ -35,6 +40,10 @@ def train_twhin_model(
     logger.info(f"Number of users: {user_cardinality}")
     logger.info(f"Number of items: {item_cardinality}")
     logger.info(f"Number of action types: {relation_cardinality}")
+
+    mlflow.set_experiment("TWHIN")
+    mlflow.config.enable_system_metrics_logging()
+    mlflow.config.set_system_metrics_sampling_interval(10)
 
     # Create datasets and loaders
     train_dataset = TwhinDataset(train_df)
@@ -57,58 +66,90 @@ def train_twhin_model(
     warmup_epochs = 3
     scheduler_warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_epochs)
 
-    # For progress tracking
-    train_losses = []
-
     # Create output directory if it doesn't exist
     os.makedirs(output_log_dir, exist_ok=True)
     os.makedirs(output_model_dir, exist_ok=True)
 
-    prev_test_loss = None
-    for epoch in range(num_epochs):
-        # Training
-        model.train()
-        train_epoch_loss = 0.0
-        train_batches = 0
+    batches_per_epoch = len(train_loader)
 
-        for batch in tqdm(train_loader):
-            for key in batch:
-                batch[key] = batch[key].to(device)
-            optimizer.zero_grad()
-            loss, loss_reg = model(batch)
-            loss_total = loss + loss_reg
-            loss_total.backward()
-            optimizer.step()
-            train_epoch_loss += loss_total.item()
-            train_batches += 1
-        scheduler_warmup.step()
+    prev_test_mrr = None
 
-        avg_train_loss = train_epoch_loss / train_batches
-        train_losses.append(avg_train_loss)
+    with mlflow.start_run(run_name=f"TwHIN:{datetime.now().strftime('%Y_%m_%d:%H_%M:%S')}"):
+        mlflow.log_params(
+            {
+                "user_cardinality": user_cardinality,
+                "item_cardinality": item_cardinality,
+                "relation_cardinality": relation_cardinality,
+                "embedding_dim": embedding_dim,
+                "batch_size": batch_size,
+                "num_epochs": num_epochs,
+                "lr": lr,
+                "reg_weight": reg_weight,
+            }
+        )
 
-        logger.info(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {avg_train_loss:.6f}")
+        for epoch in range(num_epochs):
+            # Training
+            model.train()
+            train_epoch_loss = 0.0
+            train_batches = 0
+            intermediate_losses = []
 
-        model.eval()
-        test_epoch_loss = 0.0
-        test_batches = 0
+            pbar = tqdm(train_loader)
 
-        with torch.no_grad():
-            for batch in tqdm(test_loader):
-                for key in batch:
-                    batch[key] = batch[key].to(device)
-                loss, _ = model(batch)
+            for batch in pbar:
+                batch = move_to_device(batch, device)
+                optimizer.zero_grad()
+                loss, loss_reg = model(batch)
+                loss_total = loss + loss_reg
+                loss_total.backward()
+                optimizer.step()
+                train_epoch_loss += loss_total.item()
+                intermediate_losses.append(loss_total.item())
+                if (train_batches % log_every_num_steps == 0) or (train_batches == batches_per_epoch - 1):
+                    pbar.set_description(f"Epoch {epoch + 1}, Train Loss: {train_epoch_loss / (train_batches + 1):.4f}")
+                    mlflow.log_metrics(
+                        {"Train Loss": np.mean(intermediate_losses)},
+                        step=epoch * batches_per_epoch + train_batches + 1,
+                    )
+                    intermediate_losses = []
+                train_batches += 1
+            scheduler_warmup.step()
 
-                test_epoch_loss += loss.item()
-                test_batches += 1
+            model.eval()
+            test_epoch_loss = 0.0
+            test_epoch_mrr = 0.0
+            test_batches = 0
 
-        avg_test_loss = test_epoch_loss / test_batches
-        logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}")
-        if prev_test_loss is None or avg_test_loss < prev_test_loss:
-            prev_test_loss = avg_test_loss
             with torch.no_grad():
-                torch.save(model.item_embeddings, os.path.join(output_model_dir, "item_embeddings.pt"))
-        else:
-            break
+                for batch in tqdm(test_loader):
+                    batch = move_to_device(batch, device)
+                    loss, _, mrr = model(batch, calculate_mrr=True)
+
+                    test_epoch_loss += loss.item()
+                    test_epoch_mrr += mrr
+                    test_batches += 1
+
+            avg_test_loss = test_epoch_loss / test_batches
+            avg_test_mrr = test_epoch_mrr / test_batches
+            logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, Test MRR: {avg_test_mrr:.6f}")
+            mlflow.log_metrics(
+                {"Test Loss": avg_test_loss, "Test MRR": avg_test_mrr}, step=(epoch + 1) * batches_per_epoch
+            )
+            if prev_test_mrr is None or avg_test_mrr > prev_test_mrr:
+                prev_test_mrr = avg_test_mrr
+                with torch.no_grad():
+                    torch.save(model.item_embeddings, os.path.join(output_model_dir, "item_embeddings.pt"))
+                with open(os.path.join(output_log_dir, "twhin_final.json"), "w") as f:
+                    json.dump({"Test Loss": avg_test_loss, "Test MRR": avg_test_mrr}, f, indent=2)
+            else:
+                logger.info("Test metric have not improved for 1 epoch, finishing run")
+                logger.info(f"Saved metrics to {os.path.join(output_log_dir, 'twhin_final.json')}")
+                mlflow.log_artifact(
+                    os.path.join(output_model_dir, "item_embeddings.pt"),
+                    artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
+                )
+                break
 
 
 if __name__ == "__main__":
@@ -130,6 +171,11 @@ if __name__ == "__main__":
     parser.add_argument("--reg-weight", type=float, default=0.01, help="Regularization weight")
 
     # Training parameters
+    parser.add_argument(
+        "--use-cached-results",
+        action="store_true",
+        help="Training will not be launched again if the checkpoint exists",
+    )
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-epochs", type=int, default=10, help="Number of epochs")
@@ -144,13 +190,16 @@ if __name__ == "__main__":
     parser.add_argument("--output-log-dir", type=str, default="./output", help="Directory for saving results")
     parser.add_argument("--output-model-dir", type=str, default="./output", help="Directory for saving models")
 
+    # Logging
+    parser.add_argument("--log-every-num-steps", type=int, default=10, help="The frequency to update pbar")
+
     args = parser.parse_args()
 
     # Logger setup
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     logger = logging.getLogger(__name__)
 
-    if os.path.exists(args.output_model_dir + "/item_embeddings.pt"):
+    if os.path.exists(args.output_model_dir + "/item_embeddings.pt") and args.use_cached_results:
         logger.info("Item embeddings already exist, skipping training")
         exit(0)
 
@@ -179,6 +228,7 @@ if __name__ == "__main__":
         device=args.device,
         output_log_dir=args.output_log_dir,
         output_model_dir=args.output_model_dir,
+        log_every_num_steps=args.log_every_num_steps,
     )
 
     logger.info("Training completed successfully")
