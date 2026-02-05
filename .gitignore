@@ -1,4 +1,6 @@
 __pycache__
 
+test.py
+
 *.ipynb
 *.egg-info
