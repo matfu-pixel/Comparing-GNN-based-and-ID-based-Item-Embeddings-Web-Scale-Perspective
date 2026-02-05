@@ -64,7 +64,7 @@ fi
 if $RUN_PREPARE; then
     echo "Start preprocessing..."
 
-    python scripts/data/preprocess.py \
+    uv run scripts/data/preprocess.py \
         --input ./data/dataset.parquet \
         --output-train-twhin $DATA_DIR/train_twhin.parquet \
         --output-test-twhin $DATA_DIR/test_twhin.parquet \
@@ -91,10 +91,11 @@ if $RUN_TWHIN; then
         --reg-weight 0.1 \
         --batch-size 8192 \
         --learning-rate 0.001 \
-        --num-epochs 15 \
+        --num-epochs 50 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
-        --output-model-dir $MODEL_DIR
+        --output-model-dir $MODEL_DIR \
+        --log-every-num-steps 10
 fi
 
 # --------------------
@@ -103,17 +104,18 @@ fi
 if $RUN_PRETRAIN; then
     echo "Training pretrain..."
 
-    python train_pretrain.py \
+    uv run scripts/train/train_pretrain.py \
         --train-data $DATA_DIR/train_pretrain.parquet \
         --test-data $DATA_DIR/test_pretrain.parquet \
         --item-cardinality 25834 \
         --embedding-dim 64 \
         --batch-size 1024 \
         --learning-rate 0.001 \
-        --num-epochs 15 \
+        --num-epochs 25 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
-        --output-model-dir $MODEL_DIR
+        --output-model-dir $MODEL_DIR \
+        --log-every-num-steps 10
 fi
 
 # --------------------
@@ -122,13 +124,14 @@ fi
 if $RUN_FINETUNE; then
     echo "Training finetune..."
 
-    python train_finetune.py \
+    uv run scripts/train/train_finetune.py \
         --train-data $DATA_DIR/train_finetune.parquet \
         --test-data $DATA_DIR/test_finetune.parquet \
         --batch-size 1024 \
         --learning-rate 0.001 \
-        --num-epochs 15 \
+        --num-epochs 25 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
-        --output-model-dir $MODEL_DIR
+        --output-model-dir $MODEL_DIR \
+        --log-every-num-steps 10
 fi
