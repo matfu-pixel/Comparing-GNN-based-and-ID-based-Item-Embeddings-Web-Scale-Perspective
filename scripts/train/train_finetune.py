@@ -11,7 +11,7 @@ import polars as pl
 import torch
 import torch.optim as optim
 from sklearn.metrics import ndcg_score
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from gnn_utils.dataset import FinetuneDataset
@@ -68,6 +68,17 @@ def train_finetune_model(
 ):
     logger = logging.getLogger(__name__)
 
+    if os.path.exists(os.path.join(output_log_dir, f"finetune_{mode}_final.json")):
+        with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "r") as f:
+            try:
+                all_results = json.load(f)
+            except json.JSONDecodeError:
+                all_results = []
+    else:
+        all_results = []
+    if isinstance(all_results, dict):
+        all_results = [all_results]
+
     mlflow.set_experiment("Finetune")
     mlflow.config.enable_system_metrics_logging()
     mlflow.config.set_system_metrics_sampling_interval(10)
@@ -82,8 +93,6 @@ def train_finetune_model(
     test_loader = DataLoader(
         test_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=2, collate_fn=collate_fn
     )
-
-    valid_dataset = Subset(test_dataset, range(2000))
 
     if os.path.exists(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt")) and use_cached_results:
         logger.info("Already exist, skipping training")
@@ -108,7 +117,7 @@ def train_finetune_model(
     os.makedirs(output_model_dir, exist_ok=True)
 
     batches_per_epoch = len(train_loader)
-    prev_test_ndcg = None
+    prev_test_loss = None
 
     with mlflow.start_run(run_name=f"{mode}:{datetime.now().strftime('%Y_%m_%d:%H_%M:%S')}"):
         mlflow.log_params(
@@ -159,23 +168,18 @@ def train_finetune_model(
                     test_batches += 1
 
             avg_test_loss = test_epoch_loss / test_batches
-            ndcg = evalutate_model(backbone, valid_dataset, device)
 
-            logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, nDCG:10: {ndcg:.6f}")
-            mlflow.log_metrics(
-                {"Test Loss": avg_test_loss, "nDCG:10": ndcg},
-                step=(epoch + 1) * batches_per_epoch,
-            )
-            if prev_test_ndcg is None or ndcg > prev_test_ndcg:
-                prev_test_ndcg = ndcg
+            logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}")
+            mlflow.log_metrics({"Test Loss": avg_test_loss}, step=(epoch + 1) * batches_per_epoch)
+            if prev_test_loss is None or avg_test_loss < prev_test_loss:
+                prev_test_loss = avg_test_loss
                 with torch.no_grad():
                     logger.info(
                         f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_finetune_{mode}.pt')}"
                     )
                     torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"))
-                    with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "w") as f:
-                        json.dump({"Test Loss": avg_test_loss, "nDCG@10": ndcg}, f, indent=2)
-        logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'finetune_{mode}_final.json')}")
+            else:
+                break
         mlflow.log_artifact(
             os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"),
             artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
@@ -186,7 +190,14 @@ def train_finetune_model(
         test_dataset,
         device,
     )
+    with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "w") as f:
+        json.dump(
+            all_results + [{"Test Loss": prev_test_loss, "nDCG@10": test_ndcg}],
+            f,
+            indent=2,
+        )
     logger.info(f"Final Test nDCG: {test_ndcg:.6f}")
+    logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'finetune_{mode}_final.json')}")
     return test_ndcg
 
 
