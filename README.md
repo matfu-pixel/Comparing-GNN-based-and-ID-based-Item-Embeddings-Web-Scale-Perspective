@@ -129,4 +129,4 @@ Overall, the results suggest that, at web scale, a transformer trained on rich u
 
 ## License
 
-[Specify license information here]
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
