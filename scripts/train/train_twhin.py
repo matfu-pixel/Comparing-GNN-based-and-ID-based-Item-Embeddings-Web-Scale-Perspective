@@ -1,8 +1,8 @@
 import argparse
-import datetime
 import json
 import logging
 import os
+from datetime import datetime
 
 import mlflow
 import numpy as np
@@ -72,7 +72,7 @@ def train_twhin_model(
 
     batches_per_epoch = len(train_loader)
 
-    prev_test_mrr = None
+    prev_test_loss = None
 
     with mlflow.start_run(run_name=f"TwHIN:{datetime.now().strftime('%Y_%m_%d:%H_%M:%S')}"):
         mlflow.log_params(
@@ -136,8 +136,8 @@ def train_twhin_model(
             mlflow.log_metrics(
                 {"Test Loss": avg_test_loss, "Test MRR": avg_test_mrr}, step=(epoch + 1) * batches_per_epoch
             )
-            if prev_test_mrr is None or avg_test_mrr > prev_test_mrr:
-                prev_test_mrr = avg_test_mrr
+            if prev_test_loss is None or avg_test_loss < prev_test_loss:
+                prev_test_loss = avg_test_loss
                 with torch.no_grad():
                     torch.save(model.item_embeddings, os.path.join(output_model_dir, "item_embeddings.pt"))
                 with open(os.path.join(output_log_dir, "twhin_final.json"), "w") as f:
@@ -145,6 +145,7 @@ def train_twhin_model(
             else:
                 logger.info("Test metric have not improved for 1 epoch, finishing run")
                 logger.info(f"Saved metrics to {os.path.join(output_log_dir, 'twhin_final.json')}")
+                logger.info(f"Saved embeddings to {os.path.join(output_model_dir, 'item_embeddings.pt')}")
                 mlflow.log_artifact(
                     os.path.join(output_model_dir, "item_embeddings.pt"),
                     artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
