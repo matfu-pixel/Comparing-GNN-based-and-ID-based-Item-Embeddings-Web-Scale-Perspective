@@ -5,7 +5,6 @@ import os
 import warnings
 from datetime import datetime
 
-import mlflow
 import numpy as np
 import polars as pl
 import torch
@@ -16,6 +15,7 @@ from tqdm import tqdm
 from gnn_utils.dataset import PretrainDataset
 from gnn_utils.dataset import pretrain_collate_fn as collate_fn
 from gnn_utils.models import ModelBackbone, PretrainModel
+from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
 
 

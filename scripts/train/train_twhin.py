@@ -4,7 +4,6 @@ import logging
 import os
 from datetime import datetime
 
-import mlflow
 import numpy as np
 import polars as pl
 import torch
@@ -14,6 +13,7 @@ from tqdm import tqdm
 
 from gnn_utils.dataset import TwhinDataset
 from gnn_utils.models import TwhinModel
+from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
 
 
