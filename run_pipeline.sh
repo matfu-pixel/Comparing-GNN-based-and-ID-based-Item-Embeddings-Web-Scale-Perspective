@@ -91,7 +91,7 @@ if $RUN_TWHIN; then
         --reg-weight 0.1 \
         --batch-size 8192 \
         --learning-rate 0.001 \
-        --num-epochs 50 \
+        --num-epochs 15 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
         --output-model-dir $MODEL_DIR \
@@ -111,7 +111,7 @@ if $RUN_PRETRAIN; then
         --embedding-dim 64 \
         --batch-size 1024 \
         --learning-rate 0.001 \
-        --num-epochs 25 \
+        --num-epochs 15 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
         --output-model-dir $MODEL_DIR \
@@ -129,7 +129,7 @@ if $RUN_FINETUNE; then
         --test-data $DATA_DIR/test_finetune.parquet \
         --batch-size 1024 \
         --learning-rate 0.001 \
-        --num-epochs 25 \
+        --num-epochs 15 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
         --output-model-dir $MODEL_DIR \
