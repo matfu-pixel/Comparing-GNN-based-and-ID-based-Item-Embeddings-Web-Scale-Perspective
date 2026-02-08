@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import warnings
-from collections import defaultdict
+from datetime import datetime
 
 import mlflow
 import numpy as np
@@ -78,9 +78,9 @@ def train_pretrain_model(
 
     batches_per_epoch = len(train_loader)
 
-    best_metrics = defaultdict(lambda: None)
+    best_loss = None
 
-    with mlflow.start_run():
+    with mlflow.start_run(run_name=f"{mode}:{datetime.now().strftime('%Y_%m_%d:%H_%M:%S')}"):
         mlflow.log_params(
             {
                 "item_cardinality": item_cardinality,
@@ -139,16 +139,14 @@ def train_pretrain_model(
                 {"Test Loss": avg_test_loss} | recalls,
                 step=(epoch + 1) * batches_per_epoch,
             )
-            for key in recalls.keys():
-                if (best_metrics[key] is None) or (best_metrics[key] < recalls[key]):
-                    best_metrics = recalls
-                    logger.info(
-                        f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_pretrain_{mode}.pt')}"
-                    )
-                    with torch.no_grad():
-                        torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"))
-                    with open(os.path.join(output_log_dir, f"pretrain_{mode}_final.json"), "w") as f:
-                        json.dump({"Test Loss": avg_test_loss} | recalls, f, indent=2)
+            if best_loss is None or avg_test_loss < best_loss:
+                best_loss = avg_test_loss
+                with torch.no_grad():
+                    torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"))
+                with open(os.path.join(output_log_dir, f"pretrain_{mode}_final.json"), "w") as f:
+                    json.dump({"Test Loss": avg_test_loss} | recalls, f, indent=2)
+            else:
+                break
         logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'pretrain_{mode}_final.json')}")
         mlflow.log_artifact(
             os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"),
