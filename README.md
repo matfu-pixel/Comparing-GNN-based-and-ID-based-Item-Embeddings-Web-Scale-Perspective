@@ -1,27 +1,33 @@
-# Comparing GNN-based and ID-based Item Embeddings: Web-Scale Perspective 
+# Comparing GNN-based and ID-based Item Embeddings on Yandex Lavka dataset
 
 ## Overview
 
-This repository implements a recommendation system for Online Food Delivery Services. The system is designed to rank food products based on user interaction data, with the goal of optimizing recommendations to increase the likelihood of users adding products to their shopping carts.
+This repository implements a transformer-based ranking model over user-item interaction history for [Yandex Lavka](https://lavka.yandex.ru/), a large-scale e-commerce service. We compare two ways of passing items to the transformer: either as pretrained [TwHIN](https://arxiv.org/pdf/2202.05387) item embeddings or as fully trainable embeddings learned from scratch (without pretraining).
 
-## Repository Structure
+The question we are trying to answer is: `Is it worth training GNN item embeddings to represent items in sequential recommendation transformer-based models?`
 
-```
-utils/
-    - losses.py        # Custom loss functions
-    - models.py        # Model architectures
-.gitignore
-preprocess.py          # Data preprocessing script
-README.md              # Repository documentation
-requirements.txt       # Project dependencies
-run_pipeline.sh        # Pipeline execution script
-train_finetune.py      # Model fine-tuning
-train_pretrain.py      # Model pre-training
-train_twhin.py         # Advanced training approach
-```
+## Data
 
+We publish the anonymized logs from Yandex Lavka used in this project. There are two options to get the training data:
+
+1. For your convenience, we have tracked the data with [DVC](https://dvc.org/), so that you can download everything you need with a single command. For that, however, you need to follow [this guide](https://doc.dvc.org/user-guide/data-management/remote-storage/google-drive#using-a-custom-google-cloud-project-recommended) to obtain Google OAuth client credentials. Find more details about authentication [here](https://github.com/treeverse/dvc/issues/10516#issuecomment-2289652067).
+2. Alternatively, if you prefer not to use DVC, you can download the raw data from [Zenodo](https://zenodo.org/records/15291186?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY5Y2NlNzA5LWRjOGMtNGZhMy05OTY1LWFhNGFmMThhMTk5YSIsImRhdGEiOnt9LCJyYW5kb20iOiI2OGQxMjBmMTE3YjQ0YTBlNWFmMjZkYjU3NjU0NTQ5MyJ9.cZJTpykinsmAMPdJzfdKK3Dg5l906oVNJYJZ3ayhbVigU_vAOU7NVTf_CCAMit4MdNpvl5CH4T4Z6MIBUKBGhg).
+
+The model is trained on user interaction data from Yandex Lavka:
+
+- `user_id`: Unique user identifier
+- `timestamp`: Interaction timestamp
+- `product_id`: Unique item identifier
+- `request_id`: Recommendation request identifier (recommendations are grouped by requests)
+- `action_type`: Type of user interaction (view, click, add to cart, purchase)
+- `product_name`: Tokenized item name
 
 ## Installation
+
+This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 Clone the repository:
 ```bash
@@ -29,94 +35,98 @@ git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embed
 cd gnn_utils
 ```
 
-This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-To set up the project:
+Initialize the virtual environment:
 
 ```bash
 uv python install 3.12
 uv venv --python 3.12
 source .venv/bin/activate
-uv sync --dev
 ```
 
-Note: Currently, this installs PyTorch for CUDA 12.8. If this does not work for you, or if you want another CUDA build, override it with `uv pip install torch <YOUR REQUIRED DISTRIBUTION>`.
+You have four options to install the dependencies:
 
+1. Install minimal dependencies:
+```bash
+uv sync
+```
+2. Include `dvc` if you intend to use it to pull the training data:
+```bash
+uv sync --extra dvc
+```
+3. Optionally, install [mlflow](https://mlflow.org/) to track the training progress:
+```bash
+uv sync --extra mlflow
+```
+4. Include both mlflow and dvc:
+```bash
+uv sync --extra dvc --extra mlflow
+```
 
-## Data
+*Note:* Make sure the above command installed a PyTorch version compatible with your CUDA version. Otherwise, override it with `uv pip install torch <YOUR REQUIRED DISTRIBUTION>`.
 
-### Download data 
+## Downloading data
 
-We use [DVC](https://dvc.org/) to track the data and model weights. The Google Drive is used as a remote storage. Follow [this instruction](https://doc.dvc.org/user-guide/data-management/remote-storage/google-drive#using-a-custom-google-cloud-project-recommended) to obtain the required credentials. You will end up with `.dvc/config.local` file containing:
+#### 1. Pull the data with DVC
+
+If you configured `dvc` successfully (see the Data section), you should end up with `.dvc/config.local` or `.dvc/config` file containing:
 ```
 ['remote "storage"']
     gdrive_client_id = <YOUR CLIENT ID>
     gdrive_client_secret = <YOUR SECRET>
 ```
-Pull the data and model checkpoints:
+
+Pull the raw data and the preprocessed datasets with a single command:
 ```bash
 dvc pull
-dvc repro
 ```
 
-Alternatively, you can simply download the [raw data](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw) and put it into `data/dataset.parquet`.
+#### 2. Or download it manually:
 
+If you downloaded the data manually from [Zenodo](https://zenodo.org/records/15291186?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY5Y2NlNzA5LWRjOGMtNGZhMy05OTY1LWFhNGFmMThhMTk5YSIsImRhdGEiOnt9LCJyYW5kb20iOiI2OGQxMjBmMTE3YjQ0YTBlNWFmMjZkYjU3NjU0NTQ5MyJ9.cZJTpykinsmAMPdJzfdKK3Dg5l906oVNJYJZ3ayhbVigU_vAOU7NVTf_CCAMit4MdNpvl5CH4T4Z6MIBUKBGhg), save it as `./data/dataset.parquet`.
 
-## Data Description
+## Data processing
 
-The model is trained on user interaction data from an Online Food Delivery Service with the following structure:
+If you pulled the data with `dvc`, the preprocessed datasets should be already in `./data`; you can skip this step.
 
-- `user_id`: Unique identifier for users
-- `timestamp`: Time when the interaction occurred
-- `product_id`: Unique identifier for food products
-- `request_id`: Identifier for recommendation requests (recommendations are grouped by request)
-- `action_type`: Type of user interaction (view, click, add to cart, purchase)
-- `product_name`: Tokenized product name
-
-First, download the data from https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw, then place it in the `/data` directory and make sure the file is named `dataset.parquet`.
-
-
-## Usage
-
-To run the complete pipeline (data preprocessing, training, and evaluation):
-
+Run the preprocessing step (takes ~10 minutes) with:
 ```bash
-./run_pipeline.sh
+./run_pipeline.sh --prepare
 ```
 
-This script will:
+## Training
 
-1. Preprocess the input data
-2. Train recommendation models through the multi-stage approach
-3. Evaluate model performance
-4. Save outputs to the designated directories
+Train the TwHIN item embeddings (takes ~1 minute):
+```bash
+./run_pipeline.sh --train-twhin
+```
+
+The training process is split into two stages: `pretraining` and `fine-tuning`, as described in [this paper](https://arxiv.org/pdf/2310.03481).
+
+Run `pretraining` stage:
+```bash
+./run_pipeline.sh --train-pretrain
+```
+
+Run `fine-tuning` stage:
+```bash
+./run_pipeline.sh --train-finetune
+```
 
 ## Evaluation
 
-The recommendation quality is evaluated using NDCG@10 (Normalized Discounted Cumulative Gain at 10) per request_id:
+The recommendation quality is evaluated using nDCG@10 per `request_id`:
 
-- **Positive examples**: Products added to cart
-- **Negative examples**: Products only viewed
-- The final metric is averaged across all request_ids
+- **Positive examples**: Cart additions
+- **Negative examples**: Viewed items
 
+The final metric is the average nDCG@10 across all `request_id`s. 
 
-## Output
+Evaluation is performed after the `fine-tuning` stage. You can find the evaluation results in `./logs`.
 
-After running the pipeline, you'll find:
+## Conclusions
 
-- Model checkpoints in `./tmp/models/`
-- Processed datasets in `./tmp/data/`
-- Evaluation results and logs in `./tmp/logs/`
-
+Overall, the results suggest that, at web scale, a transformer trained on rich user–item interaction histories can learn effective item representations from scratch, and the main advantages of pretrained GNN-based item embeddings appear when training data for the transformer is scarce.
 
 ## License
 
 [Specify license information here]
-
-## Contributors
-
-[List contributors here]
-
