@@ -1,1 +1,7 @@
 /dataset.parquet
+/test_finetune.parquet
+/test_pretrain.parquet
+/test_twhin.parquet
+/train_finetune.parquet
+/train_pretrain.parquet
+/train_twhin.parquet
