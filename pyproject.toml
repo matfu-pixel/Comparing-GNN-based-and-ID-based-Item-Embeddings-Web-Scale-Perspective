@@ -5,15 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dvc>=3.66.1",
-    "dvc-gdrive>=3.0.1",
-    "mlflow>=3.8.1",
     "numpy>=2.4.1",
     "polars>=1.37.1",
     "scikit-learn>=1.8.0",
     "torch>=2.10.0",
     "tqdm>=4.67.1",
 ]
+
+[project.optional-dependencies]
+mlflow = ["mlflow>=3.8.1"]
+dvc = ["dvc>=3.66.1", "dvc-gdrive>=3.0.1"]
 
 [tool.ruff]
 line-length = 120
