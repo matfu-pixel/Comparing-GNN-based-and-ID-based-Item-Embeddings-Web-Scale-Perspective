@@ -99,7 +99,7 @@ Train the TwHIN item embeddings (takes ~1 minute):
 ./run_pipeline.sh --train-twhin
 ```
 
-The process of training the ranking model is divided into two stages: `pretraining` and `fine-tuning`, as described in [this paper](https://arxiv.org/pdf/2310.03481).
+The ranking model training is divided into two stages: `pretraining` and `fine-tuning`, as described in [this paper](https://arxiv.org/pdf/2310.03481).
 
 Run `pretraining` stage (takes ~40 minutes):
 ```bash
@@ -111,7 +111,7 @@ Run `fine-tuning` stage (takes ~20 minutes):
 ./run_pipeline.sh --train-finetune
 ```
 
-If you installed `mlflow`, you can track the training process online:
+If you installed `mlflow`, you can track the training progress online:
 ```bash
 uv run mlflow server --port 5010
 ```
