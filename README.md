@@ -11,7 +11,7 @@ The question we are trying to answer is: `Is it worth training GNN item embeddin
 We publish the anonymized logs from Yandex Lavka used in this project. There are two options to get the training data:
 
 1. For your convenience, we have tracked the data with [DVC](https://dvc.org/), so that you can download everything you need with a single command. For that, however, you need to follow [this guide](https://doc.dvc.org/user-guide/data-management/remote-storage/google-drive#using-a-custom-google-cloud-project-recommended) to obtain Google OAuth client credentials. Find more details about authentication [here](https://github.com/treeverse/dvc/issues/10516#issuecomment-2289652067).
-2. Alternatively, if you prefer not to use DVC, you can download the raw data from [Zenodo](https://zenodo.org/records/15291186?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY5Y2NlNzA5LWRjOGMtNGZhMy05OTY1LWFhNGFmMThhMTk5YSIsImRhdGEiOnt9LCJyYW5kb20iOiI2OGQxMjBmMTE3YjQ0YTBlNWFmMjZkYjU3NjU0NTQ5MyJ9.cZJTpykinsmAMPdJzfdKK3Dg5l906oVNJYJZ3ayhbVigU_vAOU7NVTf_CCAMit4MdNpvl5CH4T4Z6MIBUKBGhg).
+2. Alternatively, if you prefer not to use DVC, you can download the raw data from [Zenodo](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw).
 
 The model is trained on user interaction data from Yandex Lavka:
 
@@ -40,7 +40,6 @@ Initialize the virtual environment:
 ```bash
 uv python install 3.12
 uv venv --python 3.12
-source .venv/bin/activate
 ```
 
 You have four options to install the dependencies:
@@ -77,12 +76,12 @@ If you configured `dvc` successfully (see the Data section), you should end up w
 
 Pull the raw data and the preprocessed datasets with a single command:
 ```bash
-dvc pull
+uv run dvc pull
 ```
 
 #### 2. Or download it manually:
 
-If you downloaded the data manually from [Zenodo](https://zenodo.org/records/15291186?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY5Y2NlNzA5LWRjOGMtNGZhMy05OTY1LWFhNGFmMThhMTk5YSIsImRhdGEiOnt9LCJyYW5kb20iOiI2OGQxMjBmMTE3YjQ0YTBlNWFmMjZkYjU3NjU0NTQ5MyJ9.cZJTpykinsmAMPdJzfdKK3Dg5l906oVNJYJZ3ayhbVigU_vAOU7NVTf_CCAMit4MdNpvl5CH4T4Z6MIBUKBGhg), save it as `./data/dataset.parquet`.
+If you downloaded the data manually from [Zenodo](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw), save it as `./data/dataset.parquet`.
 
 ## Data processing
 
@@ -100,16 +99,21 @@ Train the TwHIN item embeddings (takes ~1 minute):
 ./run_pipeline.sh --train-twhin
 ```
 
-The training process is split into two stages: `pretraining` and `fine-tuning`, as described in [this paper](https://arxiv.org/pdf/2310.03481).
+The process of training the ranking model is divided into two stages: `pretraining` and `fine-tuning`, as described in [this paper](https://arxiv.org/pdf/2310.03481).
 
-Run `pretraining` stage:
+Run `pretraining` stage (takes ~40 minutes):
 ```bash
 ./run_pipeline.sh --train-pretrain
 ```
 
-Run `fine-tuning` stage:
+Run `fine-tuning` stage (takes ~20 minutes):
 ```bash
 ./run_pipeline.sh --train-finetune
+```
+
+If you installed `mlflow`, you can track the training process online:
+```bash
+uv run mlflow server --port 5010
 ```
 
 ## Evaluation
