@@ -1,15 +1,24 @@
 import json
+import logging
 import os
+from collections import defaultdict
 from statistics import mean
 
 
 FOLDER = "./logs"
+OUTPUT_PATH = os.path.join(FOLDER, "averaged.json")
 
-for filename in os.listdir(FOLDER):
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+results = defaultdict(dict)
+
+for filename in sorted(os.listdir(FOLDER)):
     if not (filename.startswith("finetune") and filename.endswith(".json")):
         continue
 
     filepath = os.path.join(FOLDER, filename)
+    run_name = filename.removesuffix(".json")
 
     with open(filepath, "r") as f:
         data = json.load(f)
@@ -23,7 +32,10 @@ for filename in os.listdir(FOLDER):
         if values:
             averages[metric] = mean(values)
 
-    print(f"Average statistics from {filename} across {len(data)} runs:")
     for metric, avg_value in averages.items():
-        print(f"- {metric}: {avg_value}")
-    print()
+        results[metric][run_name] = avg_value
+
+with open(OUTPUT_PATH, "w") as f:
+    json.dump(dict(results), f, indent=4)
+
+logger.info(f"Averaged results saved to {OUTPUT_PATH}")
