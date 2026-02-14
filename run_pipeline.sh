@@ -91,7 +91,7 @@ if $RUN_TWHIN; then
         --reg-weight 0.1 \
         --batch-size 8192 \
         --learning-rate 0.001 \
-        --num-epochs 15 \
+        --num-epochs 30 \
         --device cuda \
         --output-log-dir $LOGS_DIR \
         --output-model-dir $MODEL_DIR \
