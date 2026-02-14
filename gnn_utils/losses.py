@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from gnn_utils.metrics import inbatch_mrr, inbatch_recall_at_k
+from gnn_utils.metrics import inbatch_hitrate_at_k, inbatch_mrr
 from gnn_utils.utils import make_pairs
 
 
@@ -17,7 +17,9 @@ class TwhinLoss(nn.Module):
         num_negatives = batch_size * batch_size - batch_size
         num_positives = batch_size
         neg_weight = float(num_positives) / num_negatives
-        dot_products = torch.matmul(source_embeddings, target_embeddings.t())
+        dot_products = torch.matmul(
+            torch.nn.functional.normalize(source_embeddings), torch.nn.functional.normalize(target_embeddings).t()
+        )
 
         logits = torch.cat(
             [dot_products.diag(), dot_products.flatten()[1:].view(batch_size - 1, batch_size + 1)[:, :-1].flatten()]
@@ -56,11 +58,11 @@ class InBatchSampledSoftmax(nn.Module):
     def temperature(self):
         return torch.clip(torch.exp(self.tau), min=self.MIN_TEMPERATURE, max=self.MAX_TEMPERATURE)
 
-    def forward(self, queries, candidates, recall_at=None):
+    def forward(self, queries, candidates, hitrate_at=None):
         logits = self.temperature * queries @ candidates.T
-        if recall_at is None:
+        if hitrate_at is None:
             return -torch.log_softmax(logits, dim=1).diag().mean()
-        return -torch.log_softmax(logits, dim=1).diag().mean(), inbatch_recall_at_k(queries, candidates, recall_at)
+        return -torch.log_softmax(logits, dim=1).diag().mean(), inbatch_hitrate_at_k(queries, candidates, hitrate_at)
 
 
 class CalibratedPairwiseLogistic(nn.Module):

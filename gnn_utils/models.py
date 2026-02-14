@@ -19,8 +19,8 @@ class TwhinModel(nn.Module):
         user_embeddings = self.user_embeddings(inputs["users"])
         relation_embeddings = self.relation_embeddings(inputs["relations"])
         return self.criterion(
-            torch.nn.functional.normalize(user_embeddings + relation_embeddings),
-            torch.nn.functional.normalize(item_embeddings),
+            user_embeddings + relation_embeddings,
+            item_embeddings,
             calculate_mrr=calculate_mrr,
         )
 
@@ -78,12 +78,15 @@ class ModelBackbone(nn.Module):
             activation="gelu",
             batch_first=True,
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_transformer_layers)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, num_transformer_layers, enable_nested_tensor=False
+        )
+        self.projection_layer = nn.Linear(embedding_dim, hidden_dim)
         self.user_encoder = PickFirst()
         self.item_encoder = nn.Sequential(
             nn.Linear(embedding_dim, embedding_dim * 4),
             *[ResNet(embedding_dim=embedding_dim * 4) for _ in range(num_transformer_layers)],
-            nn.Linear(embedding_dim * 4, embedding_dim),
+            nn.Linear(embedding_dim * 4, hidden_dim),
         )
 
     def forward(self, inputs):
@@ -105,7 +108,7 @@ class ModelBackbone(nn.Module):
         cls_embedding = self.cls_embedding(
             torch.zeros(batch_size, 1, device=inputs["product_id"].device, dtype=torch.long)
         )
-        input_embeddings_with_cls = torch.cat([cls_embedding, input_embeddings], dim=1)
+        input_embeddings_with_cls = self.projection_layer(torch.cat([cls_embedding, input_embeddings], dim=1))
 
         padding_mask = torch.cat(
             [
@@ -115,7 +118,7 @@ class ModelBackbone(nn.Module):
             dim=1,
         )
         user_embeddings = self.user_encoder(
-            self.transformer_encoder(src=input_embeddings_with_cls, src_key_padding_mask=padding_mask)
+            self.transformer_encoder(src=self.dropout(input_embeddings_with_cls), src_key_padding_mask=padding_mask)
         )
         offsets = torch.cumsum(inputs["candidate_names"]["lengths"], dim=0) - inputs["candidate_names"]["lengths"]
         candidates_embeddings = self.item_encoder(
@@ -134,11 +137,11 @@ class PretrainModel(nn.Module):
         self.backbone = backbone
         self.criterion = InBatchSampledSoftmax()
 
-    def forward(self, inputs, recall_at=None):
+    def forward(self, inputs, hitrate_at=None):
         backbone_output = self.backbone(inputs)
         user_embeddings = backbone_output["user_embeddings"]
         candidates_embeddings = backbone_output["candidates_embeddings"]
-        return self.criterion(user_embeddings, candidates_embeddings.squeeze(1), recall_at=recall_at)
+        return self.criterion(user_embeddings, candidates_embeddings.squeeze(1), hitrate_at=hitrate_at)
 
 
 class FinetuneModel(nn.Module):
