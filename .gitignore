@@ -1,1 +1,12 @@
-tmp
+__pycache__
+
+logs
+models
+
+test.py
+
+*.ipynb
+*.egg-info
+
+mlruns
+mlflow.db
