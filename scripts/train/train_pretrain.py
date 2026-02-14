@@ -2,7 +2,7 @@ import argparse
 import json
 import logging
 import os
-import warnings
+from collections import defaultdict
 from datetime import datetime
 
 import numpy as np
@@ -17,9 +17,6 @@ from gnn_utils.dataset import pretrain_collate_fn as collate_fn
 from gnn_utils.models import ModelBackbone, PretrainModel
 from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
-
-
-warnings.filterwarnings("ignore")
 
 
 def train_pretrain_model(
@@ -58,7 +55,7 @@ def train_pretrain_model(
 
     test_dataset = PretrainDataset(test_df)
     test_loader = DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=2, collate_fn=collate_fn
+        test_dataset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=2, collate_fn=collate_fn
     )
 
     # Initialize the model
@@ -120,32 +117,39 @@ def train_pretrain_model(
 
             model.eval()
             test_epoch_loss = 0.0
+            hitrates = defaultdict(list)
             test_batches = 0
 
             with torch.no_grad():
                 for batch in tqdm(test_loader):
                     batch = move_to_device(batch, device)
-                    loss, recalls = model(batch, recall_at=(10, 50, 100))
+                    loss, hitrates_local = model(batch, hitrate_at=(10, 50, 100))
 
                     test_epoch_loss += loss.item()
+                    for key, value in hitrates_local.items():
+                        hitrates[key].extend(value)
                     test_batches += 1
 
-            recalls = {f"Recall:{key}": value for key, value in recalls.items()}
+            hitrates = {f"hitrate:{key}": np.mean(value) for key, value in hitrates.items()}
             avg_test_loss = test_epoch_loss / test_batches
             logger.info(
-                f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, {', '.join([f'{key}: {value:.6f}' for key, value in recalls.items()])}"
+                f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, {', '.join([f'{key}: {value:.6f}' for key, value in hitrates.items()])}"
             )
             mlflow.log_metrics(
-                {"Test Loss": avg_test_loss} | recalls,
+                {"Test Loss": avg_test_loss} | hitrates,
                 step=(epoch + 1) * batches_per_epoch,
             )
             if best_loss is None or avg_test_loss < best_loss:
                 best_loss = avg_test_loss
+                logger.info(
+                    f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_pretrain_{mode}.pt')}"
+                )
                 with torch.no_grad():
                     torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"))
                 with open(os.path.join(output_log_dir, f"pretrain_{mode}_final.json"), "w") as f:
-                    json.dump({"Test Loss": avg_test_loss} | recalls, f, indent=2)
+                    json.dump({"Test Loss": avg_test_loss} | hitrates, f, indent=2)
             else:
+                logger.info("Test metric have not improved for 1 epoch, finishing run")
                 break
         logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'pretrain_{mode}_final.json')}")
         mlflow.log_artifact(

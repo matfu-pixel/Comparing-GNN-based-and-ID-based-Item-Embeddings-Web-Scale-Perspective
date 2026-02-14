@@ -27,7 +27,7 @@ def train_twhin_model(
     batch_size=64,
     num_epochs=10,
     lr=0.001,
-    reg_weight=0.01,
+    reg_weight=0.0,
     device="cuda" if torch.cuda.is_available() else "cpu",
     output_log_dir="./logs",
     output_model_dir="./models",
@@ -118,7 +118,7 @@ def train_twhin_model(
 
             model.eval()
             test_epoch_loss = 0.0
-            test_epoch_mrr = 0.0
+            test_epoch_mrr = []
             test_batches = 0
 
             with torch.no_grad():
@@ -127,30 +127,31 @@ def train_twhin_model(
                     loss, _, mrr = model(batch, calculate_mrr=True)
 
                     test_epoch_loss += loss.item()
-                    test_epoch_mrr += mrr
+                    test_epoch_mrr.extend(mrr)
                     test_batches += 1
 
             avg_test_loss = test_epoch_loss / test_batches
-            avg_test_mrr = test_epoch_mrr / test_batches
+            avg_test_mrr = np.mean(test_epoch_mrr)
             logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, Test MRR: {avg_test_mrr:.6f}")
             mlflow.log_metrics(
                 {"Test Loss": avg_test_loss, "Test MRR": avg_test_mrr}, step=(epoch + 1) * batches_per_epoch
             )
             if prev_test_loss is None or avg_test_loss < prev_test_loss:
                 prev_test_loss = avg_test_loss
+                logger.info(f"Saving model checkpoint to {os.path.join(output_model_dir, 'item_embeddings.pt')}")
                 with torch.no_grad():
                     torch.save(model.item_embeddings, os.path.join(output_model_dir, "item_embeddings.pt"))
                 with open(os.path.join(output_log_dir, "twhin_final.json"), "w") as f:
                     json.dump({"Test Loss": avg_test_loss, "Test MRR": avg_test_mrr}, f, indent=2)
             else:
                 logger.info("Test metric have not improved for 1 epoch, finishing run")
-                logger.info(f"Saved metrics to {os.path.join(output_log_dir, 'twhin_final.json')}")
-                logger.info(f"Saved embeddings to {os.path.join(output_model_dir, 'item_embeddings.pt')}")
-                mlflow.log_artifact(
-                    os.path.join(output_model_dir, "item_embeddings.pt"),
-                    artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
-                )
                 break
+        logger.info(f"Saved metrics to {os.path.join(output_log_dir, 'twhin_final.json')}")
+        logger.info(f"Saved embeddings to {os.path.join(output_model_dir, 'item_embeddings.pt')}")
+        mlflow.log_artifact(
+            os.path.join(output_model_dir, "item_embeddings.pt"),
+            artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
+        )
 
 
 if __name__ == "__main__":
@@ -205,7 +206,6 @@ if __name__ == "__main__":
         exit(0)
 
     logger.info("Starting TwhinModel training")
-    logger.info(f"Arguments: {args}")
 
     # Data loading
     logger.info(f"Loading training data from {args.train_data}")

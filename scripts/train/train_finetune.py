@@ -2,7 +2,6 @@ import argparse
 import json
 import logging
 import os
-import warnings
 from datetime import datetime
 
 import numpy as np
@@ -20,17 +19,14 @@ from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
 
 
-warnings.filterwarnings("ignore")
-
-
-def evalutate_model(backbone, test_dataset, device):
+def evaluate_model(backbone, test_dataset, device, ks=(5, 10, 20)):
     eval_loader = DataLoader(
         test_dataset, batch_size=1, shuffle=False, drop_last=False, num_workers=2, collate_fn=collate_fn
     )
     backbone = backbone.to(device)
     backbone.eval()
     test_batches = 0
-    test_epoch_ndcg = 0
+    test_epoch_ndcg = {k: 0.0 for k in ks}
 
     with torch.no_grad():
         for batch in tqdm(eval_loader):
@@ -45,11 +41,14 @@ def evalutate_model(backbone, test_dataset, device):
             )
             true_relevance = batch["candidate_mask"].cpu().numpy().astype(int)
             predicted_relevance = scores.cpu().numpy()
-            test_epoch_ndcg += ndcg_score(true_relevance[None,], predicted_relevance[None,], k=10, ignore_ties=True)
+            for k in ks:
+                test_epoch_ndcg[k] += ndcg_score(
+                    true_relevance[None,], predicted_relevance[None,], k=k, ignore_ties=True
+                )
 
             test_batches += 1
 
-    return test_epoch_ndcg / test_batches
+    return {f"ndcg@{k}": test_epoch_ndcg[k] / test_batches for k in ks}
 
 
 def train_finetune_model(
@@ -91,17 +90,17 @@ def train_finetune_model(
 
     test_dataset = FinetuneDataset(test_df)
     test_loader = DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=2, collate_fn=collate_fn
+        test_dataset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=2, collate_fn=collate_fn
     )
 
     if os.path.exists(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt")) and use_cached_results:
         logger.info("Already exist, skipping training")
-        test_ndcg = evalutate_model(
+        test_ndcg = evaluate_model(
             torch.load(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"), weights_only=False),
             test_dataset,
             device,
         )
-        logger.info(f"Final Test NDCG: {test_ndcg:.6f}")
+        logger.info("Final Test: " + ", ".join([f"{key}: {value:.6f}" for key, value in test_ndcg.items()]))
         return test_ndcg
 
     # Initialize the model
@@ -173,30 +172,31 @@ def train_finetune_model(
             mlflow.log_metrics({"Test Loss": avg_test_loss}, step=(epoch + 1) * batches_per_epoch)
             if prev_test_loss is None or avg_test_loss < prev_test_loss:
                 prev_test_loss = avg_test_loss
+                logger.info(
+                    f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_finetune_{mode}.pt')}"
+                )
                 with torch.no_grad():
-                    logger.info(
-                        f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_finetune_{mode}.pt')}"
-                    )
                     torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"))
             else:
+                logger.info("Test metric have not improved for 1 epoch, finishing run")
                 break
         mlflow.log_artifact(
             os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"),
             artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
         )
 
-    test_ndcg = evalutate_model(
+    test_ndcg = evaluate_model(
         torch.load(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"), weights_only=False),
         test_dataset,
         device,
     )
     with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "w") as f:
         json.dump(
-            all_results + [{"Test Loss": prev_test_loss, "nDCG@10": test_ndcg}],
+            all_results + [{"Test Loss": prev_test_loss, **test_ndcg}],
             f,
             indent=2,
         )
-    logger.info(f"Final Test nDCG: {test_ndcg:.6f}")
+    logger.info("Final Test: " + ", ".join([f"{key}: {value:.6f}" for key, value in test_ndcg.items()]))
     logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'finetune_{mode}_final.json')}")
     return test_ndcg
 
