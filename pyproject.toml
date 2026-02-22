@@ -13,7 +13,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mlflow = ["mlflow>=3.8.1"]
+mlflow = [
+    "mlflow>=3.8.1",
+    "psutil>=7.2.1",
+]
 dvc = ["dvc>=3.66.1", "dvc-gdrive>=3.0.1"]
 
 [tool.ruff]
