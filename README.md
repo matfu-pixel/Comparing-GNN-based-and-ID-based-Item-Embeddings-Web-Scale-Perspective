@@ -33,15 +33,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Clone the repository:
 ```bash
-git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective.git gnn_utils
-cd gnn_utils
+git clone git@github.com:matfu-pixel/Comparing-GNN-based-and-ID-based-Item-Embeddings-Web-Scale-Perspective.git gnn_utils && cd gnn_utils
 ```
 
 Initialize the virtual environment:
 
 ```bash
-uv python install 3.12
-uv venv --python 3.12
+uv python install 3.12 && uv venv --python 3.12
 ```
 
 You have four options to install the dependencies:
