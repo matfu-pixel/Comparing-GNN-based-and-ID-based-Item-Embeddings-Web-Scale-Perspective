@@ -26,7 +26,7 @@ Each user-item interaction (a dataset row) has the following fields:
 
 ## Installation
 
-This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward:
+This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) to handle dependencies. Please install it before moving forward (you will have to reopen terminal after that):
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
