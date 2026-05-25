@@ -1,7 +1,7 @@
 [project]
 name = "gnn_utils"
 version = "0.1.0"
-description = "Add your description here"
+description = "Training transformer-based sequential recommender"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,7 +17,6 @@ mlflow = [
     "mlflow>=3.8.1",
     "psutil>=7.2.1",
 ]
-dvc = ["dvc>=3.66.1", "dvc-gdrive>=3.0.1"]
 
 [tool.ruff]
 line-length = 120

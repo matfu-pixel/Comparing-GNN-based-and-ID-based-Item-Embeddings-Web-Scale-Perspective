@@ -10,11 +10,6 @@ The question we are trying to answer is: *Is it worth training GNN item embeddin
 
 We publish the anonymized logs from Yandex Lavka utilized in this project. These logs, sampled over a one-year period, encompass 15 million user-item interactions from 3,315 users and 25,833 items.
 
-There are two options to get the training data:
-
-1. For your convenience, we have tracked the data with [DVC](https://dvc.org/), so that you can download everything you need with a single command. For that, however, you need to follow [this guide](https://doc.dvc.org/user-guide/data-management/remote-storage/google-drive#using-a-custom-google-cloud-project-recommended) to obtain Google OAuth client credentials. Find more details about authentication [here](https://github.com/treeverse/dvc/issues/10516#issuecomment-2289652067).
-2. Alternatively, if you prefer not to use DVC, you can simply download the raw data from [Zenodo](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw).
-
 Each user-item interaction (a dataset row) has the following fields:
 
 - `user_id`: Unique user identifier
@@ -42,51 +37,21 @@ Initialize the virtual environment:
 uv python install 3.12 && uv venv --python 3.12
 ```
 
-You have four options to install the dependencies:
+Install the dependencies with `uv`. Optionally, you can add `mlflow` to track training progress:
 
-1. Install minimal dependencies:
-```bash
-uv sync
-```
-2. Include DVC if you intend to use it to pull the training data:
-```bash
-uv sync --extra dvc
-```
-3. Optionally, install [MLflow](https://mlflow.org/) to track the training progress:
 ```bash
 uv sync --extra mlflow
-```
-4. Include both MLflow and DVC:
-```bash
-uv sync --extra dvc --extra mlflow
 ```
 
 **Note:** Make sure the above command installed a PyTorch version compatible with your CUDA version. Otherwise, override it with `uv pip install torch <YOUR REQUIRED DISTRIBUTION>`.
 
 ## Downloading data
 
-#### 1. Pull the data with DVC
+Download the data from [Zenodo](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw).
 
-If you configured DVC successfully (see the Data section above), you should end up with `.dvc/config.local` or `.dvc/config` containing:
-
-```ini
-['remote "storage"']
-    gdrive_client_id = <YOUR CLIENT ID>
-    gdrive_client_secret = <YOUR SECRET>
-```
-
-Pull the raw data and the preprocessed datasets with a single command:
-```bash
-uv run dvc pull
-```
-
-#### 2. Or download it manually:
-
-If you downloaded the data manually from [Zenodo](https://zenodo.org/records/15529491?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImE2YjMzYTg3LTc1OGItNDlhZS1hMTc5LTQyNjRlYjFiYzcwNSIsImRhdGEiOnt9LCJyYW5kb20iOiJlN2M5YjA5MmE2MjI4MDAxOWZjN2UyODhjYTM0ODk3YyJ9.6puVZtP2dmS4bis00RmmeoERl0jGyzuX0rMmNna7wULDxqgB45quLjSXFG2iakyyRW2G7bajty1ElD0gVlkofw), save it as `./data/dataset.parquet`.
+Save it as `./data/dataset.parquet`.
 
 ## Data processing
-
-If you pulled the data with DVC, the preprocessed datasets should already be in `./data`; you can skip this step.
 
 Run the preprocessing step (takes ~10 minutes) with:
 ```bash
