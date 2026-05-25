@@ -1,26 +1,26 @@
 import json
 import logging
-import os
 from collections import defaultdict
+from pathlib import Path
 from statistics import mean
 
 
-FOLDER = "./logs"
-OUTPUT_PATH = os.path.join(FOLDER, "averaged.json")
+FOLDER = Path("./logs")
+OUTPUT_PATH = FOLDER / "averaged.json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 results = defaultdict(dict)
 
-for filename in sorted(os.listdir(FOLDER)):
+for filepath in sorted(FOLDER.iterdir()):
+    filename = filepath.name
     if not (filename.startswith("finetune") and filename.endswith(".json")):
         continue
 
-    filepath = os.path.join(FOLDER, filename)
     run_name = filename.removesuffix(".json")
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         data = json.load(f)
     if not data:
         continue

@@ -1,8 +1,8 @@
 import argparse
 import json
 import logging
-import os
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -12,8 +12,7 @@ from sklearn.metrics import ndcg_score
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from gnn_utils.dataset import FinetuneDataset
-from gnn_utils.dataset import finetune_collate_fn as collate_fn
+from gnn_utils.dataset import FinetuneDataset, finetune_collate_fn as collate_fn
 from gnn_utils.models import FinetuneModel
 from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
@@ -26,7 +25,7 @@ def evaluate_model(backbone, test_dataset, device, ks=(5, 10, 20)):
     backbone = backbone.to(device)
     backbone.eval()
     test_batches = 0
-    test_epoch_ndcg = {k: 0.0 for k in ks}
+    test_epoch_ndcg = dict.fromkeys(ks, 0.0)
 
     with torch.no_grad():
         for batch in tqdm(eval_loader):
@@ -59,16 +58,22 @@ def train_finetune_model(
     batch_size=64,
     num_epochs=10,
     lr=0.001,
-    device="cuda" if torch.cuda.is_available() else "cpu",
+    device=None,
     output_log_dir="./logs",
     output_model_dir="./models",
     log_every_num_steps=10,
     use_cached_results=False,
 ):
     logger = logging.getLogger(__name__)
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    output_log_path = Path(output_log_dir)
+    output_model_path = Path(output_model_dir)
+    results_path = output_log_path / f"finetune_{mode}_final.json"
+    backbone_path = output_model_path / f"backbone_after_finetune_{mode}.pt"
 
-    if os.path.exists(os.path.join(output_log_dir, f"finetune_{mode}_final.json")):
-        with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "r") as f:
+    if results_path.exists():
+        with open(results_path) as f:
             try:
                 all_results = json.load(f)
             except json.JSONDecodeError:
@@ -93,10 +98,10 @@ def train_finetune_model(
         test_dataset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=2, collate_fn=collate_fn
     )
 
-    if os.path.exists(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt")) and use_cached_results:
+    if backbone_path.exists() and use_cached_results:
         logger.info("Already exist, skipping training")
         test_ndcg = evaluate_model(
-            torch.load(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"), weights_only=False),
+            torch.load(backbone_path, weights_only=False),
             test_dataset,
             device,
         )
@@ -112,8 +117,8 @@ def train_finetune_model(
     scheduler_warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_epochs)
 
     # Create output directory if it doesn't exist
-    os.makedirs(output_log_dir, exist_ok=True)
-    os.makedirs(output_model_dir, exist_ok=True)
+    output_log_path.mkdir(parents=True, exist_ok=True)
+    output_model_path.mkdir(parents=True, exist_ok=True)
 
     batches_per_epoch = len(train_loader)
     prev_test_loss = None
@@ -128,15 +133,13 @@ def train_finetune_model(
         )
 
         for epoch in range(num_epochs):
-            # Training
             model.train()
             train_epoch_loss = 0.0
-            train_batches = 0
             intermediate_losses = []
 
             pbar = tqdm(train_loader)
 
-            for batch in pbar:
+            for train_batches, batch in enumerate(pbar):
                 batch = move_to_device(batch, device)
                 optimizer.zero_grad()
                 loss = model(batch)
@@ -151,7 +154,6 @@ def train_finetune_model(
                         step=epoch * batches_per_epoch + train_batches + 1,
                     )
                     intermediate_losses = []
-                train_batches += 1
             scheduler_warmup.step()
 
             model.eval()
@@ -172,32 +174,30 @@ def train_finetune_model(
             mlflow.log_metrics({"Test Loss": avg_test_loss}, step=(epoch + 1) * batches_per_epoch)
             if prev_test_loss is None or avg_test_loss < prev_test_loss:
                 prev_test_loss = avg_test_loss
-                logger.info(
-                    f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_finetune_{mode}.pt')}"
-                )
+                logger.info(f"Saving model checkpoint to {backbone_path}")
                 with torch.no_grad():
-                    torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"))
+                    torch.save(backbone, backbone_path)
             else:
                 logger.info("Test metric have not improved for 1 epoch, finishing run")
                 break
         mlflow.log_artifact(
-            os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"),
-            artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
+            backbone_path,
+            artifact_path=output_model_path.name,
         )
 
     test_ndcg = evaluate_model(
-        torch.load(os.path.join(output_model_dir, f"backbone_after_finetune_{mode}.pt"), weights_only=False),
+        torch.load(backbone_path, weights_only=False),
         test_dataset,
         device,
     )
-    with open(os.path.join(output_log_dir, f"finetune_{mode}_final.json"), "w") as f:
+    with open(results_path, "w") as f:
         json.dump(
             all_results + [{"Test Loss": prev_test_loss, **test_ndcg}],
             f,
             indent=2,
         )
     logger.info("Final Test: " + ", ".join([f"{key}: {value:.6f}" for key, value in test_ndcg.items()]))
-    logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'finetune_{mode}_final.json')}")
+    logger.info(f"Saved metrics to {results_path}")
     return test_ndcg
 
 
@@ -251,9 +251,7 @@ if __name__ == "__main__":
     test_df = pl.read_parquet(args.test_data)
 
     for init in ["frozen", "random", "twhin"]:
-        backbone = torch.load(
-            os.path.join(args.output_model_dir, f"backbone_after_pretrain_{init}.pt"), weights_only=False
-        )
+        backbone = torch.load(Path(args.output_model_dir) / f"backbone_after_pretrain_{init}.pt", weights_only=False)
         if init == "frozen":
             backbone.item_embeddings.weight.requires_grad = False
 

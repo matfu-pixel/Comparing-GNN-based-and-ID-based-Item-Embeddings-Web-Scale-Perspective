@@ -8,7 +8,7 @@ import torch
 def set_deterministic(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    np.random.seed(seed)  # noqa: NPY002 - intentionally seeds NumPy's global RNG.
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
 

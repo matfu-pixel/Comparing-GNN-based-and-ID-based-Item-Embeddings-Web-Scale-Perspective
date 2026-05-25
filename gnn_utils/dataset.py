@@ -10,8 +10,8 @@ class TwhinDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
-        row = self.df.row(idx)
+    def __getitem__(self, index):
+        row = self.df.row(index)
         user_id, product_id, action_type = row[0], row[1], row[2]
 
         return {
@@ -28,8 +28,8 @@ class PretrainDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
-        row = self.df.row(idx)
+    def __getitem__(self, index):
+        row = self.df.row(index)
         product_id, product_names, action_type, candidate, candidate_names = row[0], row[1], row[3], row[4], row[5]
 
         return {
@@ -54,8 +54,8 @@ class FinetuneDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
-        row = self.df.row(idx)
+    def __getitem__(self, index):
+        row = self.df.row(index)
         product_id, product_names, action_type, candidates, candidates_mask, candidate_names = (
             row[0],
             row[1],

@@ -1,9 +1,9 @@
 import argparse
 import json
 import logging
-import os
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -12,8 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from gnn_utils.dataset import PretrainDataset
-from gnn_utils.dataset import pretrain_collate_fn as collate_fn
+from gnn_utils.dataset import PretrainDataset, pretrain_collate_fn as collate_fn
 from gnn_utils.models import ModelBackbone, PretrainModel
 from gnn_utils.tracking import mlflow
 from gnn_utils.utils import move_to_device, set_deterministic
@@ -29,22 +28,25 @@ def train_pretrain_model(
     batch_size=64,
     num_epochs=10,
     lr=0.001,
-    device="cuda" if torch.cuda.is_available() else "cpu",
+    device=None,
     output_log_dir="./logs",
     output_model_dir="./models",
     log_every_num_steps=10,
     use_cached_results=False,
 ):
     logger = logging.getLogger(__name__)
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    output_log_path = Path(output_log_dir)
+    output_model_path = Path(output_model_dir)
 
     mlflow.set_experiment("Pretrain")
     mlflow.config.enable_system_metrics_logging()
     mlflow.config.set_system_metrics_sampling_interval(10)
 
-    if os.path.exists(os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt")) and use_cached_results:
-        logger.info(
-            f"{os.path.join(output_model_dir, f'backbone_after_pretrain_{mode}.pt')} already exists, skipping training"
-        )
+    backbone_path = output_model_path / f"backbone_after_pretrain_{mode}.pt"
+    if backbone_path.exists() and use_cached_results:
+        logger.info(f"{backbone_path} already exists, skipping training")
         return
 
     # Create datasets and loaders
@@ -70,8 +72,8 @@ def train_pretrain_model(
     scheduler_warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_epochs)
 
     # Create output directory if it doesn't exist
-    os.makedirs(output_log_dir, exist_ok=True)
-    os.makedirs(output_model_dir, exist_ok=True)
+    output_log_path.mkdir(parents=True, exist_ok=True)
+    output_model_path.mkdir(parents=True, exist_ok=True)
 
     batches_per_epoch = len(train_loader)
 
@@ -89,15 +91,13 @@ def train_pretrain_model(
         )
 
         for epoch in range(num_epochs):
-            # Training
             model.train()
             train_epoch_loss = 0.0
-            train_batches = 0
             intermediate_losses = []
 
             pbar = tqdm(train_loader)
 
-            for batch in pbar:
+            for train_batches, batch in enumerate(pbar):
                 batch = move_to_device(batch, device)
                 optimizer.zero_grad()
                 loss = model(batch)
@@ -112,7 +112,6 @@ def train_pretrain_model(
                         step=epoch * batches_per_epoch + train_batches + 1,
                     )
                     intermediate_losses = []
-                train_batches += 1
             scheduler_warmup.step()
 
             model.eval()
@@ -132,29 +131,26 @@ def train_pretrain_model(
 
             hitrates = {f"hitrate:{key}": np.mean(value) for key, value in hitrates.items()}
             avg_test_loss = test_epoch_loss / test_batches
-            logger.info(
-                f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, {', '.join([f'{key}: {value:.6f}' for key, value in hitrates.items()])}"
-            )
+            hitrates_log = ", ".join([f"{key}: {value:.6f}" for key, value in hitrates.items()])
+            logger.info(f"Epoch {epoch + 1}/{num_epochs}, Test Loss: {avg_test_loss:.6f}, {hitrates_log}")
             mlflow.log_metrics(
                 {"Test Loss": avg_test_loss} | hitrates,
                 step=(epoch + 1) * batches_per_epoch,
             )
             if best_loss is None or avg_test_loss < best_loss:
                 best_loss = avg_test_loss
-                logger.info(
-                    f"Saving model checkpoint to {os.path.join(output_model_dir, f'backbone_after_pretrain_{mode}.pt')}"
-                )
+                logger.info(f"Saving model checkpoint to {backbone_path}")
                 with torch.no_grad():
-                    torch.save(backbone, os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"))
-                with open(os.path.join(output_log_dir, f"pretrain_{mode}_final.json"), "w") as f:
+                    torch.save(backbone, backbone_path)
+                with open(output_log_path / f"pretrain_{mode}_final.json", "w") as f:
                     json.dump({"Test Loss": avg_test_loss} | hitrates, f, indent=2)
             else:
                 logger.info("Test metric have not improved for 1 epoch, finishing run")
                 break
-        logger.info(f"Saved metrics to {os.path.join(output_log_dir, f'pretrain_{mode}_final.json')}")
+        logger.info(f"Saved metrics to {output_log_path / f'pretrain_{mode}_final.json'}")
         mlflow.log_artifact(
-            os.path.join(output_model_dir, f"backbone_after_pretrain_{mode}.pt"),
-            artifact_path=os.path.basename(os.path.normpath(output_model_dir)),
+            backbone_path,
+            artifact_path=output_model_path.name,
         )
 
 
@@ -212,14 +208,15 @@ if __name__ == "__main__":
     test_df = pl.read_parquet(args.test_data)
 
     # Start training
+    item_embeddings_path = Path(args.output_model_dir) / "item_embeddings.pt"
     for init in ["frozen", "random", "twhin"]:
         if init == "frozen":
-            item_embeddings = torch.load(os.path.join(args.output_model_dir, "item_embeddings.pt"), weights_only=False)
+            item_embeddings = torch.load(item_embeddings_path, weights_only=False)
             item_embeddings.weight.requires_grad = False
         elif init == "random":
             item_embeddings = None
         elif init == "twhin":
-            item_embeddings = torch.load(os.path.join(args.output_model_dir, "item_embeddings.pt"), weights_only=False)
+            item_embeddings = torch.load(item_embeddings_path, weights_only=False)
 
         train_pretrain_model(
             mode=init,

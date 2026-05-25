@@ -18,23 +18,64 @@ mlflow = [
     "psutil>=7.2.1",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.15.14",
+    "ty>=0.0.39",
+]
+
 [tool.ruff]
 line-length = 120
 
 [tool.ruff.lint]
 # list of all codes - https://docs.astral.sh/ruff/rules/
-select = ["E4", "E7", "E9", "F", "W", "I"]
-ignore = ["F403", "E721"]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "N",
+    "UP",
+    "SIM",
+    "C4",
+    "PTH",
+    "PERF",
+    "NPY",
+    "TID",
+]
+
+ignore = [
+    "PERF203",
+    "SIM115",
+    "PTH123",
+    "B007",
+    "N812",
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = [
+    "F401",
+    "F403",
+    "TID252",
+]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
+known-first-party = ["gnn_utils"]
+combine-as-imports = true
+
+
+[tool.ty.rules]
+unresolved-import = "ignore"
+
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
 
 [tool.setuptools]
 packages = ["gnn_utils"]

@@ -11,9 +11,9 @@ def inbatch_mrr(dot_products: torch.Tensor) -> list[float]:
 
     Returns: list of MRR scores for this batch.
     """
-    B = dot_products.size(0)
+    batch_size = dot_products.size(0)
     sorted_idx = dot_products.argsort(dim=1, descending=True)  # [B, B]
-    target_indices = torch.arange(B, device=dot_products.device)  # [B]
+    target_indices = torch.arange(batch_size, device=dot_products.device)  # [B]
 
     positions = (sorted_idx == target_indices.unsqueeze(1)).nonzero(as_tuple=False)[:, 1]  # [B]
     ranks = positions.to(torch.float32) + 1.0  # [B]
@@ -32,13 +32,13 @@ def inbatch_hitrate_at_k(queries: torch.Tensor, candidates: torch.Tensor, ks=(10
     Returns: dict {k: hitrate_at_k} where hitrate_at_k is a boolean tensor of shape [B].
     """
     scores = queries @ candidates.T  # [B, B]
-    B = scores.size(0)
+    batch_size = scores.size(0)
 
     max_k = max(ks)
-    assert max_k <= B, "max_k cannot be larger than batch size"
+    assert max_k <= batch_size, "max_k cannot be larger than batch size"
 
     topk_idx = scores.topk(k=max_k, dim=1).indices  # [B, max_k]
-    target_indices = torch.arange(B, device=scores.device).unsqueeze(1)  # [B, 1]
+    target_indices = torch.arange(batch_size, device=scores.device).unsqueeze(1)  # [B, 1]
 
     hitrates = defaultdict(list)
     for k in ks:

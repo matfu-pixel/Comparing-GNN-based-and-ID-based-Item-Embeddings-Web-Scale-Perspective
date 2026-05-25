@@ -1,10 +1,14 @@
+import importlib
 import logging
+from typing import Any
 
 
 try:
-    import mlflow  # type: ignore
+    import mlflow as _mlflow
 except ImportError:
-    from . import noop_mlflow as mlflow  # noqa: F401
+    mlflow: Any = importlib.import_module("gnn_utils.tracking.noop_mlflow")
+else:
+    mlflow: Any = _mlflow
 
 logging.getLogger("alembic").setLevel(logging.WARNING)
 logging.getLogger("mlflow").setLevel(logging.WARNING)

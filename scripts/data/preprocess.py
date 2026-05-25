@@ -1,10 +1,11 @@
 import argparse
 import logging
-import os
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable
 from itertools import chain
-from typing import Any, Dict, Generator, Iterable, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, cast
 
 import polars as pl
 
@@ -13,7 +14,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def ensure_sorted_by_timestamp(group: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+def collect_lazy_pair(frames: list[pl.LazyFrame]) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Collect a pair of lazy frames and narrow Polars' broad return type."""
+    first, second = pl.collect_all(frames)
+    return cast(pl.DataFrame, first), cast(pl.DataFrame, second)
+
+
+def ensure_sorted_by_timestamp(group: Iterable[dict[str, Any]]) -> Generator[dict[str, Any], None, None]:
     """
     Verify that events are sorted by timestamp and yield each event.
 
@@ -26,7 +33,7 @@ def ensure_sorted_by_timestamp(group: Iterable[Dict[str, Any]]) -> Generator[Dic
     Raises:
         AssertionError: If events are not sorted by timestamp
     """
-    prev_timestamp: Optional[int] = None
+    prev_timestamp: int | None = None
     for row in group:
         if prev_timestamp is not None and prev_timestamp > row["timestamp"]:
             raise AssertionError("Events must be sorted by timestamp")
@@ -60,7 +67,7 @@ class LaggedQueue:
         """Return the number of events in the lagged queue."""
         return len(self._lagged_deque)
 
-    def get(self) -> List[Dict[str, Any]]:
+    def get(self) -> list[dict[str, Any]]:
         """Return all events in the lagged queue."""
         return list(self._lagged_deque)
 
@@ -77,7 +84,7 @@ class LaggedQueue:
         while self._fresh_deque and (timestamp - self._fresh_deque[0]["timestamp"]) > self._lag:
             self._lagged_deque.append(self._fresh_deque.popleft())
 
-    def push(self, event: Dict[str, Any]) -> None:
+    def push(self, event: dict[str, Any]) -> None:
         """
         Add a new event to the queue and update internal state.
 
@@ -98,7 +105,7 @@ class ActionType:
     TARGET = "target"
 
     @classmethod
-    def get_standard_types(cls) -> List[str]:
+    def get_standard_types(cls) -> list[str]:
         """Return list of standard action types."""
         return [cls.VIEW, cls.CLICK, cls.CART_UPDATE, cls.PURCHASE]
 
@@ -108,7 +115,7 @@ class Reducer(ABC):
     Base class for data reducers that process groups of events.
     """
 
-    def __init__(self, min_length: int, max_length: int, lag: int, timesplit: int, result_schema: Dict[str, Any]):
+    def __init__(self, min_length: int, max_length: int, lag: int, timesplit: int, result_schema: dict[str, Any]):
         """
         Initialize a new Reducer.
 
@@ -123,7 +130,7 @@ class Reducer(ABC):
         self._max_length: int = max_length
         self._lag: int = lag
         self._timesplit: int = timesplit
-        self._result_schema: Dict[str, Any] = result_schema
+        self._result_schema: dict[str, Any] = result_schema
 
     @abstractmethod
     def __call__(self, group: pl.DataFrame) -> pl.DataFrame:
@@ -157,7 +164,7 @@ class PretrainReducer(Reducer):
         Returns:
             Processed DataFrame with interaction sequences and targets
         """
-        res_rows: List[Dict[str, Any]] = []
+        res_rows: list[dict[str, Any]] = []
         history = LaggedQueue(lag=self._lag, capacity=self._max_length)
 
         for row in ensure_sorted_by_timestamp(group.to_dicts()):
@@ -166,7 +173,7 @@ class PretrainReducer(Reducer):
 
                 if len(history) >= self._min_length:
                     list_of_dicts = history.get()
-                    res_row: Dict[str, List] = {}
+                    res_row: dict[str, Any] = {}
 
                     for key in ["product_id", "timestamp", "action_type"]:
                         res_row[key] = [sample[key] for sample in list_of_dicts]
@@ -211,7 +218,7 @@ class FinetuneReducer(Reducer):
         Returns:
             Processed DataFrame with interaction sequences and candidates
         """
-        res_rows: List[Dict[str, Any]] = []
+        res_rows: list[dict[str, Any]] = []
         history = LaggedQueue(lag=self._lag, capacity=self._max_length)
 
         for row in ensure_sorted_by_timestamp(group.to_dicts()):
@@ -220,7 +227,7 @@ class FinetuneReducer(Reducer):
 
                 if len(history) >= self._min_length:
                     list_of_dicts = history.get()
-                    res_row: Dict[str, Any] = {}
+                    res_row: dict[str, Any] = {}
 
                     for key in ["product_id", "timestamp", "action_type"]:
                         res_row[key] = [sample[key] for sample in list_of_dicts]
@@ -282,19 +289,21 @@ class Preprocessor:
         This modifies the internal data representation by replacing
         product and user IDs with sequential integer IDs.
         """
-        unique_product_ids = self._data.select(pl.col("product_id")).unique().collect().to_series().to_list()
+        product_ids_df = cast(pl.DataFrame, self._data.select(pl.col("product_id")).unique().collect())
+        unique_product_ids = product_ids_df.to_series().to_list()
         mapping_product_ids = {val: idx for idx, val in enumerate(sorted(unique_product_ids))}
         self._data = self._data.with_columns(
             pl.col("product_id").replace(mapping_product_ids).add(1).alias("product_id")  # add 1 for padding token
         )
         logger.info(f"Preprocessed {len(mapping_product_ids)} unique product IDs")
 
-        unique_user_ids = self._data.select(pl.col("user_id")).unique().collect().to_series().to_list()
+        user_ids_df = cast(pl.DataFrame, self._data.select(pl.col("user_id")).unique().collect())
+        unique_user_ids = user_ids_df.to_series().to_list()
         mapping_user_ids = {val: idx for idx, val in enumerate(sorted(unique_user_ids))}
         self._data = self._data.with_columns(pl.col("user_id").replace(mapping_user_ids).alias("user_id"))
         logger.info(f"Preprocessed {len(mapping_user_ids)} unique user IDs")
 
-    def preprocess_twhin_data(self, time_split: int) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    def preprocess_twhin_data(self, time_split: int) -> tuple[pl.DataFrame, pl.DataFrame]:
         """
         Preprocess data for twhin (graph-based) modeling.
 
@@ -313,7 +322,7 @@ class Preprocessor:
         )
 
         # Split into train and test based on is_valid
-        train_data, test_data = pl.collect_all(
+        train_data, test_data = collect_lazy_pair(
             [result.filter(~pl.col("is_valid")).drop("is_valid"), result.filter(pl.col("is_valid")).drop("is_valid")]
         )
 
@@ -322,7 +331,7 @@ class Preprocessor:
 
     def preprocess_pretrain_data(
         self, time_split: int, min_length: int = 5, max_length: int = 256, lag_seconds: int = 86400
-    ) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    ) -> tuple[pl.DataFrame, pl.DataFrame]:
         """
         Preprocess data for pretraining recommendation models.
 
@@ -335,7 +344,7 @@ class Preprocessor:
         Returns:
             Tuple of (train_data, test_data) DataFrames
         """
-        RESULT_SCHEMA = {
+        result_schema = {
             "product_id": pl.List(pl.UInt64),
             "product_names": pl.Struct({"ids": pl.List(pl.Int64), "lengths": pl.List(pl.Int64)}),
             "timestamp": pl.List(pl.Int64),
@@ -353,12 +362,12 @@ class Preprocessor:
             max_length=max_length,
             lag=lag_seconds,
             timesplit=time_split,
-            result_schema=RESULT_SCHEMA,
+            result_schema=result_schema,
         )
 
         result = (
             prepared_data.group_by("user_id")
-            .map_groups(reducer, schema=RESULT_SCHEMA)
+            .map_groups(reducer, schema=result_schema)
             .with_columns(
                 pl.col("action_type").list.eval(
                     pl.element().map_elements(
@@ -373,7 +382,7 @@ class Preprocessor:
         train_lf = result.filter(~pl.col("is_valid").list.all()).drop("is_valid")
         test_lf = result.filter(pl.col("is_valid").list.all()).drop("is_valid")
 
-        train_data, test_data = pl.collect_all([train_lf, test_lf])
+        train_data, test_data = collect_lazy_pair([train_lf, test_lf])
 
         logger.info(f"Preprocessed pretrain data: {len(train_data)} train rows, {len(test_data)} test rows")
         return train_data, test_data
@@ -418,7 +427,7 @@ class Preprocessor:
 
     def preprocess_finetune_data(
         self, time_split: int, min_length: int = 5, max_length: int = 256, lag_seconds: int = 86400
-    ) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    ) -> tuple[pl.DataFrame, pl.DataFrame]:
         """
         Preprocess data for fine-tuning recommendation models.
 
@@ -431,7 +440,7 @@ class Preprocessor:
         Returns:
             Tuple of (train_data, test_data) DataFrames
         """
-        RESULT_SCHEMA = {
+        result_schema = {
             "product_id": pl.List(pl.UInt64),
             "product_names": pl.Struct({"ids": pl.List(pl.Int64), "lengths": pl.List(pl.Int64)}),
             "timestamp": pl.List(pl.Int64),
@@ -456,12 +465,12 @@ class Preprocessor:
             max_length=max_length,
             lag=lag_seconds,
             timesplit=time_split,
-            result_schema=RESULT_SCHEMA,
+            result_schema=result_schema,
         )
 
         result = (
             prepared_data.group_by("user_id")
-            .map_groups(reducer, schema=RESULT_SCHEMA)
+            .map_groups(reducer, schema=result_schema)
             .with_columns(
                 pl.col("action_type").list.eval(
                     pl.element().map_elements(
@@ -476,7 +485,7 @@ class Preprocessor:
         train_lf = result.filter(~pl.col("is_valid").list.all()).drop("is_valid")
         test_lf = result.filter(pl.col("is_valid").list.all()).drop("is_valid")
 
-        train_data, test_data = pl.collect_all([train_lf, test_lf])
+        train_data, test_data = collect_lazy_pair([train_lf, test_lf])
 
         logger.info(f"Preprocessed finetune data: {len(train_data)} train rows, {len(test_data)} test rows")
         return train_data, test_data
@@ -523,7 +532,7 @@ def main(
     # Process each mode
     for mode, (output_train_path, output_test_path) in modes_and_paths:
         # Check if output files already exist
-        if not force and os.path.exists(output_train_path) and os.path.exists(output_test_path):
+        if not force and Path(output_train_path).exists() and Path(output_test_path).exists():
             logger.warning(f"Files {output_train_path} and {output_test_path} already exist for {mode}. Skipping.")
             continue
 
